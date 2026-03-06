@@ -1,5 +1,7 @@
 <script lang="ts">
-  export let workspaceName: string;
+  import type { Workspace } from '$lib/api/workstation';
+
+  export let workspace: Workspace | null = null;
   export let isReady: boolean = false;
 
   let key = 0;
@@ -8,7 +10,7 @@
     key += 1;
   }
 
-  $: previewUrl = `https://${workspaceName}.sammasak.dev`;
+  $: previewUrl = workspace?.previewUrl ?? null;
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
@@ -45,7 +47,7 @@
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
-      <span style="font-family: var(--font-mono); font-size: 12px; color: {isReady ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{previewUrl}</span>
+      <span style="font-family: var(--font-mono); font-size: 12px; color: {isReady && previewUrl ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{previewUrl ?? 'Not available'}</span>
     </div>
 
     <!-- Reload button -->
@@ -73,7 +75,7 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if isReady}
+    {#if isReady && previewUrl}
       {#key key}
         <iframe
           src={previewUrl}
@@ -106,7 +108,7 @@
         </div>
         <div class="text-center">
           <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Not deployed yet</p>
-          <p style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted);">{previewUrl}</p>
+          {#if previewUrl}<p style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted);">{previewUrl}</p>{/if}
         </div>
       </div>
     {/if}

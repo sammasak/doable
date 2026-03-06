@@ -5,6 +5,7 @@ export interface Workspace {
   ipAddress: string | null;
   uptimeSeconds: number;
   createdAt?: string;
+  previewUrl?: string;
 }
 
 export interface Goal {

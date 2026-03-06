@@ -282,7 +282,7 @@
 
       <!-- Right: Live preview -->
       <div class="flex-1 overflow-hidden">
-        <LivePreview {workspaceName} {isReady} />
+        <LivePreview {workspace} {isReady} />
       </div>
     {/if}
   </div>
