@@ -10,7 +10,7 @@
     key += 1;
   }
 
-  $: previewUrl = workspace?.previewUrl ?? (workspace ? `https://${workspace.name}.sammasak.dev` : null);
+  $: previewUrl = workspace ? `https://${workspace.name}.sammasak.dev` : null;
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
