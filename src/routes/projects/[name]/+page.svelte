@@ -26,11 +26,14 @@
   let heartbeatInterval: ReturnType<typeof setInterval>;
   let goalRetryInterval: ReturnType<typeof setInterval>;
   let goalPollInterval: ReturnType<typeof setInterval>;
+  let confirmationInterval: ReturnType<typeof setInterval>;
   let eventSource: EventSource | null = null;
   let goalRetries = 0;
   const MAX_GOAL_RETRIES = 10;
   let isWorkerWarming = false;
   let pollingActive = false;
+  let confirmationStartedAt: number = 0;
+  let confirmationWarning = false;
 
   // State machine
   type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
@@ -58,6 +61,7 @@
     clearInterval(heartbeatInterval);
     clearInterval(goalRetryInterval);
     clearInterval(goalPollInterval);
+    clearInterval(confirmationInterval);
     eventSource?.close();
   });
 
@@ -154,10 +158,35 @@
     }
   }
 
-  function startConfirmation(_goalId: string) {
-    // TODO: implement in Task 2 — for now, fall through to streaming
-    phase = 'streaming';
-    connectStream();
+  function startConfirmation(goalId: string) {
+    phase = 'confirming_goal';
+    confirmationStartedAt = Date.now();
+    confirmationWarning = false;
+    clearInterval(confirmationInterval);
+
+    confirmationInterval = setInterval(async () => {
+      try {
+        const fetchedGoals = await getGoals(workspaceName);
+        const goal = fetchedGoals.find(g => g.id === goalId);
+        if (!goal) return; // not visible yet, keep waiting
+
+        if (goal.status === 'in_progress') {
+          clearInterval(confirmationInterval);
+          confirmationWarning = false;
+          phase = 'streaming';
+          connectStream();
+        } else if (goal.status === 'done' || goal.status === 'failed' || goal.status === 'reviewed') {
+          // Completed before we even started streaming (very fast goal)
+          clearInterval(confirmationInterval);
+          phase = 'idle';
+          isReady = true;
+          await loadGoals();
+        } else if (Date.now() - confirmationStartedAt > 20_000) {
+          // Still pending after 20s — show warning but keep waiting
+          confirmationWarning = true;
+        }
+      } catch { /* worker may not be ready yet */ }
+    }, 2000);
   }
 
   function connectStream() {
@@ -235,6 +264,12 @@
       <span style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         retry {goalRetries}/{MAX_GOAL_RETRIES}
+      </span>
+    {/if}
+    {#if phase === 'confirming_goal'}
+      <span style="font-size: 11px; color: #A78BFA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #A78BFA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
+        {confirmationWarning ? 'Goal queued — Claude not started yet' : 'Claude is picking up your goal…'}
       </span>
     {/if}
     {#if error}
