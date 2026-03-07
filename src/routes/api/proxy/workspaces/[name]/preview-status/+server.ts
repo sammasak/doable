@@ -1,7 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
-const PREVIEW_PORT = 4300;
+const PREVIEW_PORT = 8080;
 
 async function resolveIP(name: string): Promise<string | null> {
   try {

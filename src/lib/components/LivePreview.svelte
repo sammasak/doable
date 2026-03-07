@@ -46,7 +46,7 @@
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
       <span style="font-family: var(--font-mono); font-size: 12px; color: {previewActive ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-        {previewActive ? 'localhost:4300 (dev)' : 'No preview'}
+        {previewActive ? 'localhost:8080 (dev)' : 'No preview'}
       </span>
     </div>
     <button
