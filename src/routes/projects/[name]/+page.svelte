@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
-  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents } from '$lib/api/workstation';
+  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, WorkerNotReadyError } from '$lib/api/workstation';
   import type { Goal, Workspace } from '$lib/api/workstation';
   import { createEventSource, parseEventToActivity } from '$lib/api/stream';
   import type { ActivityItem } from '$lib/api/stream';
@@ -29,9 +29,10 @@
   let eventSource: EventSource | null = null;
   let goalRetries = 0;
   const MAX_GOAL_RETRIES = 10;
+  let isWorkerWarming = false;
 
   // State machine
-  type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'idle';
+  type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
   let phase: Phase = 'provisioning';
   let pendingPrompt: string | null = null;
 
@@ -107,7 +108,7 @@
         isReady = true;
       }
       // Fallback: if we're stuck in streaming/posting phase but all goals are finished, go idle
-      if ((phase === 'streaming' || phase === 'posting_goal') && goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
+      if ((phase === 'streaming' || phase === 'posting_goal' || phase === 'confirming_goal') && goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
         phase = 'idle';
         clearInterval(goalPollInterval);
       }
@@ -124,16 +125,21 @@
         const goal = await addGoal(workspaceName, prompt);
         goals = [...goals, goal];
         clearInterval(goalRetryInterval);
-        phase = 'streaming';
-        connectStream();
+        isWorkerWarming = false;
+        phase = 'confirming_goal';   // stub for Task 2 — implemented next
+        startConfirmation(goal.id);  // stub for Task 2 — implemented next
       } catch (e) {
-        goalRetries++;
-        if (goalRetries >= MAX_GOAL_RETRIES) {
-          clearInterval(goalRetryInterval);
-          error = `Failed to post goal after ${MAX_GOAL_RETRIES} attempts`;
-          phase = 'idle';
+        if (e instanceof WorkerNotReadyError) {
+          isWorkerWarming = true;
+        } else {
+          isWorkerWarming = false;
+          goalRetries++;
+          if (goalRetries >= MAX_GOAL_RETRIES) {
+            clearInterval(goalRetryInterval);
+            error = `Failed to post goal after ${MAX_GOAL_RETRIES} attempts`;
+            phase = 'idle';
+          }
         }
-        // else retry next interval
       }
     };
 
@@ -141,6 +147,12 @@
     if (phase === 'posting_goal') {
       goalRetryInterval = setInterval(tryPost, 5000);
     }
+  }
+
+  function startConfirmation(_goalId: string) {
+    // TODO: implement in Task 2 — for now, fall through to streaming
+    phase = 'streaming';
+    connectStream();
   }
 
   function connectStream() {
@@ -191,7 +203,7 @@
   }
 
   $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown');
-  $: isWorking = phase === 'posting_goal' || phase === 'streaming';
+  $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
 </script>
 
 <svelte:head>
@@ -209,7 +221,12 @@
     <span style="color: var(--color-accent); font-size: 14px;">◆</span>
     <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em;">{workspaceName}</span>
     <WorkspaceStatus status={vmStatus} />
-    {#if phase === 'posting_goal'}
+    {#if isWorkerWarming}
+      <span style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
+        VM warming up…
+      </span>
+    {:else if phase === 'posting_goal'}
       <span style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         retry {goalRetries}/{MAX_GOAL_RETRIES}

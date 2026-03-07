@@ -9,6 +9,15 @@ async function resolveIP(name: string): Promise<string | null> {
   return ws.ipAddress ?? null;
 }
 
+async function isWorkerReady(ip: string): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${ip}:4200/health`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export const GET: RequestHandler = async ({ params }) => {
   const ip = await resolveIP(params.name);
   if (!ip) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -24,7 +33,16 @@ export const GET: RequestHandler = async ({ params }) => {
 
 export const POST: RequestHandler = async ({ params, request }) => {
   const ip = await resolveIP(params.name);
-  if (!ip) return new Response('Worker not ready', { status: 503 });
+  if (!ip) return new Response(JSON.stringify({ reason: 'no_ip' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  const ready = await isWorkerReady(ip);
+  if (!ready) return new Response(JSON.stringify({ reason: 'warming_up' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' }
+  });
 
   const body = await request.json();
   try {
@@ -36,6 +54,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
     const data = await res.text();
     return new Response(data, { status: res.status, headers: { 'Content-Type': 'application/json' } });
   } catch {
-    return new Response('Worker not ready', { status: 503 });
+    return new Response(JSON.stringify({ reason: 'warming_up' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 };

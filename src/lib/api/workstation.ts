@@ -71,12 +71,19 @@ export async function getGoals(name: string): Promise<Goal[]> {
   return res.json();
 }
 
+export class WorkerNotReadyError extends Error {
+  constructor() { super('Worker warming up'); }
+}
+
 export async function addGoal(name: string, goal: string): Promise<Goal> {
   const res = await fetch(`/api/proxy/workspaces/${name}/goals`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ goal })
   });
+  if (res.status === 503) {
+    throw new WorkerNotReadyError();
+  }
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Failed to add goal (${res.status}): ${err}`);
