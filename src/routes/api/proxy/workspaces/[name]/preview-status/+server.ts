@@ -24,8 +24,9 @@ export const GET: RequestHandler = async ({ params }) => {
     const res = await fetch(`http://${ip}:${PREVIEW_PORT}/`, {
       signal: AbortSignal.timeout(1500)
     });
-    const active = res.status < 500;
-    return new Response(JSON.stringify({ active, port: PREVIEW_PORT }), {
+    const active = res.ok;
+    const body = active ? { active, port: PREVIEW_PORT } : { active, reason: 'not_ready' };
+    return new Response(JSON.stringify(body), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch {

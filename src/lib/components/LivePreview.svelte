@@ -72,7 +72,7 @@
           src={proxyBase}
           title="Live preview"
           class="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox="allow-scripts allow-same-origin allow-popups"
         ></iframe>
       {/key}
     {:else}

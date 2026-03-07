@@ -82,6 +82,7 @@
         clearInterval(pollInterval);
 
         // Start preview status polling (every 5s)
+        clearInterval(previewPollInterval);
         previewPollInterval = setInterval(async () => {
           if (!workspace?.ipAddress) return;
           const status = await getPreviewStatus(workspaceName);
@@ -111,6 +112,8 @@
         // Resume polling slowly for status updates
         pollInterval = setInterval(pollWorkspace, 15000);
       } else if (!running) {
+        clearInterval(previewPollInterval);
+        previewActive = false;
         // Show K8s events during boot
         try {
           events = await getWorkspaceEvents(workspaceName);
