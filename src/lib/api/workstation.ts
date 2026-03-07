@@ -91,3 +91,19 @@ export async function addGoal(name: string, goal: string): Promise<Goal> {
   }
   return res.json();
 }
+
+export interface PreviewStatus {
+  active: boolean;
+  port?: number;
+  reason?: string;
+}
+
+export async function getPreviewStatus(name: string): Promise<PreviewStatus> {
+  try {
+    const res = await fetch(`/api/proxy/workspaces/${name}/preview-status`);
+    if (!res.ok) return { active: false };
+    return res.json();
+  } catch {
+    return { active: false };
+  }
+}

@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
-  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, WorkerNotReadyError } from '$lib/api/workstation';
+  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, getPreviewStatus, WorkerNotReadyError } from '$lib/api/workstation';
   import type { Goal, Workspace } from '$lib/api/workstation';
   import { createEventSource, parseEventToActivity } from '$lib/api/stream';
   import type { ActivityItem } from '$lib/api/stream';
@@ -21,6 +21,9 @@
   let isProvisioning = true;
   let isReady = false;
   let error = '';
+
+  let previewActive = false;
+  let previewPollInterval: ReturnType<typeof setInterval>;
 
   let pollInterval: ReturnType<typeof setInterval>;
   let heartbeatInterval: ReturnType<typeof setInterval>;
@@ -62,6 +65,7 @@
     clearInterval(goalRetryInterval);
     clearInterval(goalPollInterval);
     clearInterval(confirmationInterval);
+    clearInterval(previewPollInterval);
     eventSource?.close();
   });
 
@@ -76,6 +80,15 @@
         isProvisioning = false;
         isReady = false; // preview might not be up yet
         clearInterval(pollInterval);
+
+        // Start preview status polling (every 5s)
+        previewPollInterval = setInterval(async () => {
+          if (!workspace?.ipAddress) return;
+          const status = await getPreviewStatus(workspaceName);
+          previewActive = status.active;
+        }, 5000);
+        // Also check immediately
+        getPreviewStatus(workspaceName).then(s => { previewActive = s.active; });
 
         // Fetch initial goals
         await loadGoals();
@@ -341,7 +354,7 @@
 
       <!-- Right: Live preview -->
       <div class="flex-1 overflow-hidden">
-        <LivePreview {workspace} {isReady} />
+        <LivePreview {workspace} {previewActive} {isReady} />
       </div>
     {/if}
   </div>

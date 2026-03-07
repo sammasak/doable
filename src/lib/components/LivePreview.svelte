@@ -2,6 +2,7 @@
   import type { Workspace } from '$lib/api/workstation';
 
   export let workspace: Workspace | null = null;
+  export let previewActive: boolean = false;
   export let isReady: boolean = false;
 
   let key = 0;
@@ -10,7 +11,8 @@
     key += 1;
   }
 
-  $: previewUrl = workspace ? `https://${workspace.name}.sammasak.dev` : null;
+  // Proxy URL — always relative, same origin
+  $: proxyBase = workspace ? `/api/proxy/workspaces/${workspace.name}/preview/` : null;
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
@@ -24,14 +26,11 @@
     background: var(--color-surface);
     user-select: none;
   ">
-    <!-- Traffic light dots -->
     <div style="display: flex; gap: 5px; flex-shrink: 0;">
       <span style="width: 10px; height: 10px; border-radius: 50%; background: #FF5F56; display: block; opacity: 0.7;"></span>
       <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFBD2E; display: block; opacity: 0.7;"></span>
       <span style="width: 10px; height: 10px; border-radius: 50%; background: #28CA41; display: block; opacity: 0.7;"></span>
     </div>
-
-    <!-- Address bar -->
     <div style="
       flex: 1;
       display: flex;
@@ -43,31 +42,23 @@
       gap: 6px;
       overflow: hidden;
     ">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--color-text-muted); opacity: {isReady ? 1 : 0.4};">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--color-text-muted); opacity: {previewActive ? 1 : 0.4};">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
-      <span style="font-family: var(--font-mono); font-size: 12px; color: {isReady && previewUrl ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{previewUrl ?? 'Not available'}</span>
+      <span style="font-family: var(--font-mono); font-size: 12px; color: {previewActive ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        {previewActive ? 'localhost:4300 (dev)' : 'No preview'}
+      </span>
     </div>
-
-    <!-- Reload button -->
     <button
       on:click={reload}
       title="Reload preview"
       style="
-        flex-shrink: 0;
-        width: 26px;
-        height: 26px;
-        border-radius: 6px;
-        border: 1px solid var(--color-border);
-        background: transparent;
-        color: var(--color-text-muted);
-        font-size: 13px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: color 0.15s, border-color 0.15s;
+        flex-shrink: 0; width: 26px; height: 26px; border-radius: 6px;
+        border: 1px solid var(--color-border); background: transparent;
+        color: var(--color-text-muted); font-size: 13px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; transition: color 0.15s, border-color 0.15s;
       "
       class="hover-border-accent"
     >↻</button>
@@ -75,10 +66,10 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if isReady && previewUrl}
+    {#if previewActive && proxyBase}
       {#key key}
         <iframe
-          src={previewUrl}
+          src={proxyBase}
           title="Live preview"
           class="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -86,13 +77,9 @@
       {/key}
     {:else}
       <div class="flex flex-col items-center justify-center h-full gap-5" style="padding: 32px;">
-        <!-- Placeholder browser mockup -->
         <div style="
-          width: 220px;
-          border: 1px solid var(--color-border);
-          border-radius: 10px;
-          overflow: hidden;
-          opacity: 0.35;
+          width: 220px; border: 1px solid var(--color-border);
+          border-radius: 10px; overflow: hidden; opacity: 0.35;
         ">
           <div style="background: var(--color-surface-2); padding: 8px 10px; display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--color-border);">
             <span style="width: 7px; height: 7px; border-radius: 50%; background: #4A5068; display: block;"></span>
@@ -107,8 +94,8 @@
           </div>
         </div>
         <div class="text-center">
-          <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Not deployed yet</p>
-          {#if previewUrl}<p style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted);">{previewUrl}</p>{/if}
+          <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview</p>
+          <p style="font-size: 12px; color: var(--color-text-muted);">Use the PREVIEW skill to start a dev server</p>
         </div>
       </div>
     {/if}
