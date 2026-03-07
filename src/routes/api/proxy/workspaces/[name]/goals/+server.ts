@@ -27,7 +27,7 @@ export const GET: RequestHandler = async ({ params }) => {
     const data = await res.text();
     return new Response(data, { status: res.status, headers: { 'Content-Type': 'application/json' } });
   } catch {
-    return new Response('[]', { status: 503, headers: { 'Content-Type': 'application/json' } });
+    return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 };
 

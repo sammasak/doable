@@ -30,6 +30,7 @@
   let goalRetries = 0;
   const MAX_GOAL_RETRIES = 10;
   let isWorkerWarming = false;
+  let pollingActive = false;
 
   // State machine
   type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
@@ -61,6 +62,8 @@
   });
 
   async function pollWorkspace() {
+    if (pollingActive) return;
+    pollingActive = true;
     try {
       workspace = await getWorkspace(workspaceName);
       const running = workspace.vmStatus === 'Running' && workspace.ipAddress;
@@ -98,6 +101,8 @@
       }
     } catch (e) {
       error = String(e);
+    } finally {
+      pollingActive = false;
     }
   }
 

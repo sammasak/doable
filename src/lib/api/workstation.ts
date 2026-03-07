@@ -67,6 +67,7 @@ export async function heartbeat(name: string): Promise<void> {
 
 export async function getGoals(name: string): Promise<Goal[]> {
   const res = await fetch(`/api/proxy/workspaces/${name}/goals`);
+  if (res.status === 503) return [];
   if (!res.ok) throw new Error(`Failed to get goals: ${res.status}`);
   return res.json();
 }
