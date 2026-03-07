@@ -120,6 +120,7 @@
       if ((phase === 'streaming' || phase === 'posting_goal' || phase === 'confirming_goal') && goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
         phase = 'idle';
         clearInterval(goalPollInterval);
+        clearInterval(confirmationInterval);
       }
     } catch { /* worker may not be ready yet */ }
   }
@@ -135,8 +136,8 @@
         goals = [...goals, goal];
         clearInterval(goalRetryInterval);
         isWorkerWarming = false;
-        phase = 'confirming_goal';   // stub for Task 2 — implemented next
-        startConfirmation(goal.id);  // stub for Task 2 — implemented next
+        phase = 'confirming_goal';
+        startConfirmation(goal.id);
       } catch (e) {
         if (e instanceof WorkerNotReadyError) {
           isWorkerWarming = true;
@@ -178,6 +179,7 @@
         } else if (goal.status === 'done' || goal.status === 'failed' || goal.status === 'reviewed') {
           // Completed before we even started streaming (very fast goal)
           clearInterval(confirmationInterval);
+          confirmationWarning = false;
           phase = 'idle';
           isReady = true;
           await loadGoals();
