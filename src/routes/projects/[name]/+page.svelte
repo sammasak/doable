@@ -219,9 +219,9 @@
       loadGoals();
     };
 
-    // Poll goal statuses every 8s while streaming as a fallback
+    // Poll goal statuses every 2s while streaming as a fallback
     // (catches cases where [DONE] event is missed or SSE connection is unreliable)
-    goalPollInterval = setInterval(loadGoals, 8000);
+    goalPollInterval = setInterval(loadGoals, 2000);
   }
 
   async function handlePrompt(e: CustomEvent<string>) {
