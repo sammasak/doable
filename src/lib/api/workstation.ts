@@ -107,3 +107,14 @@ export async function getPreviewStatus(name: string): Promise<PreviewStatus> {
     return { active: false };
   }
 }
+
+export async function getDeployedUrl(name: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/proxy/workspaces/${name}/deployed-url`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url ?? null;
+  } catch {
+    return null;
+  }
+}

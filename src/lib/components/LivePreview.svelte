@@ -1,17 +1,50 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Workspace } from '$lib/api/workstation';
+  import { getDeployedUrl } from '$lib/api/workstation';
 
   export let workspace: Workspace | null = null;
   export let previewActive: boolean = false;
 
   let key = 0;
+  type Tab = 'dev' | 'deployed';
+
+  // Default: dev if preview is active, otherwise deployed
+  let activeTab: Tab = previewActive ? 'dev' : 'deployed';
+
+  let deployedUrl: string | null = null;
+  let deployedUrlLoading = true;
 
   function reload() {
     key += 1;
   }
 
+  function setTab(tab: Tab) {
+    if (tab === 'dev' && !previewActive) return;
+    activeTab = tab;
+  }
+
+  // Auto-switch to deployed when dev becomes unavailable
+  $: if (!previewActive && activeTab === 'dev') {
+    activeTab = 'deployed';
+  }
+
   // Proxy URL — always relative, same origin
   $: proxyBase = workspace ? `/api/proxy/workspaces/${workspace.name}/preview/` : null;
+
+  // Address bar text
+  $: addressText = activeTab === 'dev'
+    ? (previewActive ? 'localhost:8080 (dev)' : 'No preview')
+    : (deployedUrl ?? (deployedUrlLoading ? 'Loading…' : 'No deployment yet'));
+
+  // Fetch deployed URL when workspace changes
+  $: if (workspace?.name) {
+    deployedUrlLoading = true;
+    getDeployedUrl(workspace.name).then(url => {
+      deployedUrl = url;
+      deployedUrlLoading = false;
+    });
+  }
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
@@ -30,6 +63,50 @@
       <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFBD2E; display: block; opacity: 0.7;"></span>
       <span style="width: 10px; height: 10px; border-radius: 50%; background: #28CA41; display: block; opacity: 0.7;"></span>
     </div>
+
+    <!-- Dev / Deployed toggle -->
+    <div style="
+      display: flex;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      overflow: hidden;
+    ">
+      <button
+        on:click={() => setTab('dev')}
+        disabled={!previewActive}
+        style="
+          padding: 3px 9px;
+          font-size: 11px;
+          font-family: var(--font-mono);
+          border: none;
+          border-right: 1px solid var(--color-border);
+          background: {activeTab === 'dev' ? 'var(--color-accent)' : 'transparent'};
+          color: {activeTab === 'dev' ? '#fff' : 'var(--color-text-muted)'};
+          cursor: {previewActive ? 'pointer' : 'not-allowed'};
+          opacity: {!previewActive ? 0.4 : 1};
+          transition: background 0.15s, color 0.15s;
+          line-height: 1.5;
+        "
+      >Dev</button>
+      <button
+        on:click={() => setTab('deployed')}
+        style="
+          padding: 3px 9px;
+          font-size: 11px;
+          font-family: var(--font-mono);
+          border: none;
+          background: {activeTab === 'deployed' ? 'var(--color-accent)' : 'transparent'};
+          color: {activeTab === 'deployed' ? '#fff' : 'var(--color-text-secondary)'};
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+          line-height: 1.5;
+          display: flex; align-items: center; gap: 4px;
+        "
+      >↗ Deployed</button>
+    </div>
+
     <div style="
       flex: 1;
       display: flex;
@@ -41,12 +118,12 @@
       gap: 6px;
       overflow: hidden;
     ">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--color-text-muted); opacity: {previewActive ? 1 : 0.4};">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; color: var(--color-text-muted); opacity: {activeTab === 'deployed' || previewActive ? 1 : 0.4};">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
-      <span style="font-family: var(--font-mono); font-size: 12px; color: {previewActive ? 'var(--color-text-secondary)' : 'var(--color-text-muted)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-        {previewActive ? 'localhost:8080 (dev)' : 'No preview'}
+      <span style="font-family: var(--font-mono); font-size: 12px; color: {activeTab === 'dev' && !previewActive ? 'var(--color-text-muted)' : 'var(--color-text-secondary)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        {addressText}
       </span>
     </div>
     <button
@@ -65,13 +142,22 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if previewActive && proxyBase}
+    {#if activeTab === 'dev' && previewActive && proxyBase}
       {#key key}
         <iframe
           src={proxyBase}
           title="Live preview"
           class="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-popups"
+        ></iframe>
+      {/key}
+    {:else if activeTab === 'deployed' && deployedUrl}
+      {#key key}
+        <iframe
+          src={deployedUrl}
+          title="Deployed preview"
+          class="w-full h-full border-0"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
         ></iframe>
       {/key}
     {:else}
@@ -93,8 +179,13 @@
           </div>
         </div>
         <div class="text-center">
-          <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview</p>
-          <p style="font-size: 12px; color: var(--color-text-muted);">Use the PREVIEW skill to start a dev server</p>
+          {#if activeTab === 'deployed' && !deployedUrlLoading}
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No deployment yet</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Deploy to production to see a live URL here</p>
+          {:else}
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Use the PREVIEW skill to start a dev server</p>
+          {/if}
         </div>
       </div>
     {/if}
