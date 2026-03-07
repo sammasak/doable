@@ -13,7 +13,7 @@
 
   export let data: PageData;
 
-  const workspaceName = $page.params.name;
+  const workspaceName = data.name;
   let workspace: Workspace | null = data.workspace;
   let goals: Goal[] = [];
   let activity: ActivityItem[] = [];
@@ -357,7 +357,7 @@
 
       <!-- Right: Live preview -->
       <div class="flex-1 overflow-hidden">
-        <LivePreview {workspace} {previewActive} {isReady} />
+        <LivePreview {workspace} {previewActive} />
       </div>
     {/if}
   </div>

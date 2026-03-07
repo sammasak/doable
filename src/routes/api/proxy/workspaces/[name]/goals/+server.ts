@@ -19,6 +19,7 @@ async function isWorkerReady(ip: string): Promise<boolean> {
 }
 
 export const GET: RequestHandler = async ({ params }) => {
+  if (!params.name) return new Response('Bad request', { status: 400 });
   const ip = await resolveIP(params.name);
   if (!ip) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
 
@@ -32,6 +33,7 @@ export const GET: RequestHandler = async ({ params }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request }) => {
+  if (!params.name) return new Response('Bad request', { status: 400 });
   const ip = await resolveIP(params.name);
   if (!ip) return new Response(JSON.stringify({ reason: 'no_ip' }), {
     status: 503,
@@ -44,7 +46,15 @@ export const POST: RequestHandler = async ({ params, request }) => {
     headers: { 'Content-Type': 'application/json' }
   });
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   try {
     const res = await fetch(`http://${ip}:4200/goals`, {
       method: 'POST',

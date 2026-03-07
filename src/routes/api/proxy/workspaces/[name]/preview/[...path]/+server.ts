@@ -15,6 +15,7 @@ async function resolveIP(name: string): Promise<string | null> {
 }
 
 export const GET: RequestHandler = async ({ params, url }) => {
+  if (!params.name) return new Response('Bad request', { status: 400 });
   const ip = await resolveIP(params.name);
   if (!ip) return new Response('VM not ready', { status: 503 });
 

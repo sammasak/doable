@@ -15,6 +15,7 @@ async function resolveIP(name: string): Promise<string | null> {
 }
 
 export const GET: RequestHandler = async ({ params }) => {
+  if (!params.name) return new Response('Bad request', { status: 400 });
   const ip = await resolveIP(params.name);
   if (!ip) return new Response(JSON.stringify({ active: false, reason: 'no_ip' }), {
     headers: { 'Content-Type': 'application/json' }

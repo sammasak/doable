@@ -3,7 +3,6 @@
 
   export let workspace: Workspace | null = null;
   export let previewActive: boolean = false;
-  export let isReady: boolean = false;
 
   let key = 0;
 
