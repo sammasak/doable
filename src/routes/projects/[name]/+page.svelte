@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
   import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, getPreviewStatus, WorkerNotReadyError } from '$lib/api/workstation';

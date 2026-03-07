@@ -3,6 +3,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 const API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
 export const GET: RequestHandler = async ({ params }) => {
+  if (!params.name) return new Response('Bad request', { status: 400 });
   const res = await fetch(`${API}/api/v1/workspaces/${params.name}/events`);
   if (!res.ok) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
   const data = await res.text();
