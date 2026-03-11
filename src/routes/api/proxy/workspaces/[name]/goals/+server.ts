@@ -3,10 +3,14 @@ import type { RequestHandler } from '@sveltejs/kit';
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
 async function resolveIP(name: string): Promise<string | null> {
-  const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`);
-  if (!res.ok) return null;
-  const ws = await res.json();
-  return ws.ipAddress ?? null;
+  try {
+    const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`);
+    if (!res.ok) return null;
+    const ws = await res.json();
+    return ws.ipAddress ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function isWorkerReady(ip: string): Promise<boolean> {

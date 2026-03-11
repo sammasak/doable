@@ -15,6 +15,10 @@
   let prompt = '';
   let nameError = '';
 
+  // Cross-platform submit hint
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+  const submitHint = isMac ? '⌘↵' : 'Ctrl+↵';
+
   const examplePrompts = [
     'Build a markdown notes app with local storage',
     'Create a real-time kanban board',
@@ -24,9 +28,17 @@
   ];
 
   onMount(async () => {
+    // Restore last-used project name from localStorage
+    const savedName = localStorage.getItem('doable:lastProjectName');
+    if (savedName) name = savedName;
+
     await refresh();
     loading = false;
   });
+
+  function onProjectNameChange(value: string) {
+    localStorage.setItem('doable:lastProjectName', value);
+  }
 
   async function refresh() {
     try {
@@ -162,7 +174,7 @@
         <input
           type="text"
           bind:value={name}
-          on:input={() => nameError = validateName(name)}
+          on:input={() => { nameError = validateName(name); onProjectNameChange(name); }}
           placeholder="my-app"
           style="
             flex: 1;
@@ -259,7 +271,7 @@
 
     <!-- Hint -->
     <p style="margin-top: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted);">
-      ⌘↵ to submit · Shift+Enter for newline
+      {submitHint} to submit · Shift+Enter for newline
     </p>
 
     {#if error}
