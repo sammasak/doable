@@ -52,6 +52,11 @@ function humanizePath(path: string, prefix: string): string {
   if (/\.rs$/.test(basename)) return `${prefix} Building your app`;
   if (/\.(css|scss|pcss)$/.test(basename)) return `${prefix} Styling your app`;
   if (/\.html?$/.test(basename)) return `${prefix} Updating layout`;
+  // Infrastructure / GitOps file operations — suppress entirely (never user-visible)
+  if (/\/(apps|homelab-gitops)\//i.test(path) ||
+      /\b(kustomization|namespace|service|ingress)\.ya?ml$/i.test(basename)) {
+    return '';  // empty string → caller's if (text.trim()) guard suppresses it
+  }
   // Known build-toolchain hidden directories — show as generic step (not user-visible project files)
   if (/\/\.(cargo|rustup|npm|yarn|pnpm|gradle|m2|cache|local\/share)\//i.test(path)) return `${prefix} Configuring build`;
   // Strip /var/lib/claude-worker/projects/{name}/ prefix — show only relative path
@@ -116,6 +121,11 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             if (/\bgit push\b/i.test(desc) || /\bgit commit\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Publishing changes...', timestamp: new Date(), color: 'text-green-400' };
             }
+            // GitOps / CI infrastructure — translate flux to friendly message, suppress auth checks
+            if (/\bflux\b/i.test(desc)) {
+              return { id: nextId(), kind: 'hook', text: '⚙ Deploying your app…', timestamp: new Date(), color: 'text-purple-400' };
+            }
+            if (/\bgh\s+auth\b/i.test(desc) || /\bskopeo\b.*inspect\b/i.test(desc)) return null;
             // Nix/musl toolchain setup — translate to friendly label
             if (/\bpkgsMusl\b|nix\s+(develop|build|eval|shell|instantiate)\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Getting your tools ready…', timestamp: new Date(), color: 'text-blue-400' };

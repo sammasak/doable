@@ -160,8 +160,8 @@
           phase = 'idle';
         }
 
-        // Resume polling slowly for status updates
-        pollInterval = setInterval(pollWorkspace, POLL_SLOW_MS);
+        // Resume polling — stay fast if we're still waiting for the controller to post spec.goal
+        pollInterval = setInterval(pollWorkspace, pendingPromptIsSpecGoal ? POLL_FAST_MS : POLL_SLOW_MS);
       } else if (running && phase === 'idle' && pendingPromptIsSpecGoal) {
         // VM is running, we're waiting for the controller to post the spec goal.
         // Check if it has appeared yet and start streaming if so.
