@@ -6,6 +6,7 @@ export interface Workspace {
   uptimeSeconds: number;
   createdAt?: string;
   previewUrl?: string;
+  goal?: string;
 }
 
 export interface Goal {

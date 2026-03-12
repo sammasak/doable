@@ -88,7 +88,7 @@
         idleHaltAfterMinutes: 60,
         goal: prompt.trim() || undefined,
       });
-      goto(`/projects/${name}?goal=${encodeURIComponent(prompt.trim())}`);
+      goto(`/projects/${name}`);
     } catch (e) {
       error = String(e);
       creating = false;

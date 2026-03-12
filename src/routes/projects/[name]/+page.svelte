@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
-  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, getPreviewStatus, WorkerNotReadyError } from '$lib/api/workstation';
+  import { getWorkspace, getGoals, addGoal, heartbeat, getWorkspaceEvents, getPreviewStatus, deleteWorkspace, WorkerNotReadyError } from '$lib/api/workstation';
   import type { Goal, Workspace } from '$lib/api/workstation';
   import { createEventSource, parseEventToActivity } from '$lib/api/stream';
   import type { ActivityItem } from '$lib/api/stream';
@@ -29,33 +29,71 @@
   let goalRetryInterval: ReturnType<typeof setInterval>;
   let goalPollInterval: ReturnType<typeof setInterval>;
   let confirmationInterval: ReturnType<typeof setInterval>;
+  let staleActivityInterval: ReturnType<typeof setInterval>;
+  let lastRealActivityAt = 0;
   let eventSource: EventSource | null = null;
-  let goalRetries = 0;
+  // Suppress replays of the same activity text within this window (handles SSE reconnect re-sends).
+  // 5 minutes covers typical single-goal session length; cleared on new goal in handlePrompt.
+  const ACTIVITY_DEDUP_MS = 300_000;
+  const recentActivityTexts = new Map<string, number>();
+
+  // Polling and timeout intervals (ms)
+  const POLL_FAST_MS = 5_000;       // workspace poll while provisioning
+  const POLL_SLOW_MS = 15_000;      // workspace poll after VM is running
+  const HEARTBEAT_MS = 30_000;      // keepalive ping to prevent VM halt
+  const GOAL_RETRY_MS = 5_000;      // retry interval for posting a goal
+  const GOAL_POLL_MS = 2_000;       // fallback goal status poll during streaming
+  const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
+  const STALE_ACTIVITY_MS = 65_000;  // inject a patience message after this much silence
+  const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
+
+  let goalRetries = 0;       // generic HTTP errors — fast cap (10 × 5s = 50s)
   const MAX_GOAL_RETRIES = 10;
+  let workerWarmRetries = 0; // 503/warming errors — generous cap for slow VM boot (24 × 5s = 2 min)
+  const MAX_WORKER_WARM_RETRIES = 24;
   let isWorkerWarming = false;
   let pollingActive = false;
   let confirmationStartedAt: number = 0;
   let confirmationWarning = false;
+  let streamStartedAt: number = 0;
+  let elapsedSeconds: number = 0;
+  let elapsedBasis: number = 0;
+  let elapsedInterval: ReturnType<typeof setInterval>;
+  let waitStartedAt: number = 0;
+  let waitElapsedSeconds: number = 0;
+  let waitElapsedInterval: ReturnType<typeof setInterval>;
 
   // State machine
   type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
   let phase: Phase = 'provisioning';
-  let pendingPrompt: string | null = null;
+  // Seed pendingPrompt from SSR data immediately so the provisioning overlay shows the goal
+  // on first paint (including page reloads). The controller posts spec.goal to the VM — we
+  // must NOT call addGoal() for it.
+  let pendingPrompt: string | null = data.workspace?.goal ?? null;
+  // True when pendingPrompt came from workspace.spec.goal — the controller posts it,
+  // so we must NOT call addGoal() for it. False when it came from the chat input.
+  let pendingPromptIsSpecGoal: boolean = !!data.workspace?.goal;
 
   onMount(async () => {
-    // Check for initial prompt stored from landing page
-    const stored = sessionStorage.getItem(`initial_prompt_${workspaceName}`);
-    if (stored) {
-      pendingPrompt = stored;
-      sessionStorage.removeItem(`initial_prompt_${workspaceName}`);
-    }
+    // Clean up legacy localStorage keys from the old ?goal= redirect approach.
+    // The initial goal is now carried in workspace.spec.goal and posted by the controller.
+    const pendingKey = `doable:pendingGoal:${workspaceName}`;
+    localStorage.removeItem(pendingKey);
+    localStorage.removeItem(`doable:initialGoal:${workspaceName}`);
+    sessionStorage.removeItem(`initial_prompt_${workspaceName}`);
+
+    // Track total wait time from page load (covers provisioning + queuing + confirming phases)
+    waitStartedAt = Date.now();
+    waitElapsedInterval = setInterval(() => {
+      waitElapsedSeconds = Math.floor((Date.now() - waitStartedAt) / 1000);
+    }, 1000);
 
     // Start polling workspace status
     await pollWorkspace();
-    pollInterval = setInterval(pollWorkspace, 5000);
+    pollInterval = setInterval(pollWorkspace, POLL_FAST_MS);
 
-    // Heartbeat every 30s
-    heartbeatInterval = setInterval(() => heartbeat(workspaceName), 30000);
+    // Heartbeat to prevent idle VM halt
+    heartbeatInterval = setInterval(() => heartbeat(workspaceName), HEARTBEAT_MS);
   });
 
   onDestroy(() => {
@@ -65,6 +103,9 @@
     clearInterval(goalPollInterval);
     clearInterval(confirmationInterval);
     clearInterval(previewPollInterval);
+    clearInterval(elapsedInterval);
+    clearInterval(waitElapsedInterval);
+    clearInterval(staleActivityInterval);
     eventSource?.close();
   });
 
@@ -86,30 +127,52 @@
           if (!workspace?.ipAddress) return;
           const status = await getPreviewStatus(workspaceName);
           previewActive = status.active;
-        }, 5000);
+        }, POLL_FAST_MS);
         // Also check immediately
         getPreviewStatus(workspaceName).then(s => { previewActive = s.active; });
 
         // Fetch initial goals
         await loadGoals();
 
-        // If we have a pending initial prompt, post it
-        if (pendingPrompt && goals.length === 0) {
+        // Show the spec goal as pendingPrompt during the wait so the user sees their goal.
+        // Don't post it — the controller posts it automatically via spec.goal.
+        if (!pendingPrompt && workspace?.goal) {
+          pendingPrompt = workspace.goal;
+          pendingPromptIsSpecGoal = true;
+        }
+
+        const hasActiveGoal = goals.some(g => g.status === 'pending' || g.status === 'in_progress');
+        if (hasActiveGoal) {
+          // A goal is already queued/running (controller posted the spec goal, or a prior session)
+          // Clear the spec-goal display since the real goal object is now visible
+          if (pendingPromptIsSpecGoal) {
+            pendingPrompt = null;
+            pendingPromptIsSpecGoal = false;
+          }
+          phase = 'streaming';
+          connectStream();
+        } else if (pendingPrompt && !pendingPromptIsSpecGoal) {
+          // A follow-up goal was posted via handlePrompt before the VM became ready
           phase = 'posting_goal';
           await postGoalWithRetry(pendingPrompt);
-          pendingPrompt = null;
         } else {
-          const hasActiveGoal = goals.some(g => g.status === 'pending' || g.status === 'in_progress');
-          if (hasActiveGoal) {
-            phase = 'streaming';
-            connectStream();
-          } else {
-            phase = 'idle';
-          }
+          // Either waiting for the controller to pick up spec.goal, or truly idle
+          phase = 'idle';
         }
 
         // Resume polling slowly for status updates
-        pollInterval = setInterval(pollWorkspace, 15000);
+        pollInterval = setInterval(pollWorkspace, POLL_SLOW_MS);
+      } else if (running && phase === 'idle' && pendingPromptIsSpecGoal) {
+        // VM is running, we're waiting for the controller to post the spec goal.
+        // Check if it has appeared yet and start streaming if so.
+        await loadGoals();
+        const hasActiveGoal = goals.some(g => g.status === 'pending' || g.status === 'in_progress');
+        if (hasActiveGoal) {
+          pendingPrompt = null;
+          pendingPromptIsSpecGoal = false;
+          phase = 'streaming';
+          connectStream();
+        }
       } else if (!running) {
         clearInterval(previewPollInterval);
         previewActive = false;
@@ -119,7 +182,12 @@
         } catch { /* ignore */ }
       }
     } catch (e) {
-      error = String(e);
+      // Suppress transient workspace fetch errors during provisioning and streaming —
+      // brief 502s from the workspace API are normal during VM scheduling and don't
+      // represent actionable failures for the user
+      if (phase === 'idle') {
+        error = String(e);
+      }
     } finally {
       pollingActive = false;
     }
@@ -136,12 +204,15 @@
         phase = 'idle';
         clearInterval(goalPollInterval);
         clearInterval(confirmationInterval);
+        clearInterval(elapsedInterval);
+        clearInterval(staleActivityInterval);
       }
     } catch { /* worker may not be ready yet */ }
   }
 
   async function postGoalWithRetry(prompt: string) {
     goalRetries = 0;
+    workerWarmRetries = 0;
     clearInterval(goalRetryInterval);
     clearInterval(goalPollInterval);
 
@@ -149,19 +220,32 @@
       try {
         const goal = await addGoal(workspaceName, prompt);
         goals = [...goals, goal];
+        pendingPrompt = null;
         clearInterval(goalRetryInterval);
         isWorkerWarming = false;
+        // Goal accepted — clear the pending key so reloads don't re-post it
+        localStorage.removeItem(`doable:pendingGoal:${workspaceName}`);
         phase = 'confirming_goal';
         startConfirmation(goal.id);
       } catch (e) {
         if (e instanceof WorkerNotReadyError) {
-          isWorkerWarming = true;
+          workerWarmRetries++;
+          if (workerWarmRetries >= MAX_WORKER_WARM_RETRIES) {
+            clearInterval(goalRetryInterval);
+            error = 'Workspace took too long to start. Please try again.';
+            pendingPrompt = null;
+            phase = 'idle';
+            isWorkerWarming = false;
+          } else {
+            isWorkerWarming = true;
+          }
         } else {
           isWorkerWarming = false;
           goalRetries++;
           if (goalRetries >= MAX_GOAL_RETRIES) {
             clearInterval(goalRetryInterval);
             error = `Failed to post goal after ${MAX_GOAL_RETRIES} attempts`;
+            pendingPrompt = null;
             phase = 'idle';
           }
         }
@@ -170,7 +254,7 @@
 
     await tryPost();
     if (phase === 'posting_goal') {
-      goalRetryInterval = setInterval(tryPost, 5000);
+      goalRetryInterval = setInterval(tryPost, GOAL_RETRY_MS);
     }
   }
 
@@ -198,27 +282,67 @@
           phase = 'idle';
           isReady = true;
           await loadGoals();
-        } else if (Date.now() - confirmationStartedAt > 20_000) {
+        } else if (Date.now() - confirmationStartedAt > CONFIRMATION_TIMEOUT_MS) {
           // Still pending after 20s — show warning but keep waiting
           confirmationWarning = true;
         }
       } catch { /* worker may not be ready yet */ }
-    }, 2000);
+    }, CONFIRMATION_POLL_MS);
   }
 
   function connectStream() {
+    streamStartedAt = Date.now();
+    lastRealActivityAt = Date.now();
+    clearInterval(elapsedInterval);
+    elapsedInterval = setInterval(() => {
+      elapsedSeconds = Math.floor((Date.now() - streamStartedAt) / 1000);
+    }, 1000);
     eventSource?.close();
     clearInterval(goalPollInterval);
+    clearInterval(staleActivityInterval);
     eventSource = createEventSource(workspaceName);
+
+    function addActivityItem(item: ActivityItem) {
+      // Suppress replays within a 5-minute window — handles SSE reconnect re-sending prior events
+      // and consecutive duplicates during long build phases.
+      // Normalize key: strip file-op sigil (+/~) so Write then Edit on the same path
+      // don't both appear as separate items for the same conceptual step.
+      const dedupKey = item.text.startsWith('+ ') || item.text.startsWith('~ ')
+        ? item.text.slice(2)
+        : item.text;
+      const now = Date.now();
+      const lastSeen = recentActivityTexts.get(dedupKey);
+      if (lastSeen && now - lastSeen < ACTIVITY_DEDUP_MS) return;
+      recentActivityTexts.set(dedupKey, now);
+      lastRealActivityAt = Date.now();
+      activity = [...activity, item];
+    }
+
+    // Inject a patience message if no real activity appears for STALE_ACTIVITY_MS.
+    // Bypasses dedup intentionally — this is a synthetic heartbeat, not an SSE replay.
+    staleActivityInterval = setInterval(() => {
+      if (phase === 'streaming' && Date.now() - lastRealActivityAt >= STALE_ACTIVITY_MS) {
+        activity = [...activity, {
+          id: String(Date.now()),
+          kind: 'hook' as const,
+          text: '⚙ Still building… hang tight',
+          timestamp: new Date(),
+          color: 'text-yellow-400',
+        }];
+        lastRealActivityAt = Date.now(); // reset so the next message waits another STALE_ACTIVITY_MS
+      }
+    }, 10_000);
 
     eventSource.onmessage = (e) => {
       const item = parseEventToActivity(e);
       if (item) {
-        activity = [...activity, item];
+        addActivityItem(item);
         if (item.kind === 'done' || item.kind === 'failed') {
           phase = 'idle';
           isReady = true;
           clearInterval(goalPollInterval);
+          clearInterval(elapsedInterval);
+          clearInterval(staleActivityInterval);
           loadGoals();
         }
       }
@@ -226,7 +350,7 @@
 
     eventSource.addEventListener('hook', (e) => {
       const item = parseEventToActivity(e as MessageEvent);
-      if (item) activity = [...activity, item];
+      if (item) addActivityItem(item);
     });
 
     eventSource.onerror = () => {
@@ -236,7 +360,14 @@
 
     // Poll goal statuses every 2s while streaming as a fallback
     // (catches cases where [DONE] event is missed or SSE connection is unreliable)
-    goalPollInterval = setInterval(loadGoals, 2000);
+    goalPollInterval = setInterval(loadGoals, GOAL_POLL_MS);
+  }
+
+  async function cancelWorkspace() {
+    try {
+      await deleteWorkspace(workspaceName);
+    } catch { /* ignore errors */ }
+    goto('/');
   }
 
   async function handlePrompt(e: CustomEvent<string>) {
@@ -250,11 +381,31 @@
 
     phase = 'posting_goal';
     activity = []; // clear for new session
+    recentActivityTexts.clear();
+    clearInterval(staleActivityInterval);
+    lastRealActivityAt = 0;
+    pendingPrompt = prompt;
+    pendingPromptIsSpecGoal = false; // user-entered follow-up goal — must call addGoal()
     await postGoalWithRetry(prompt);
   }
 
   $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown');
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
+  $: waitElapsedStr = waitElapsedSeconds > 0
+    ? (waitElapsedSeconds < 60 ? `${waitElapsedSeconds}s` : `${Math.floor(waitElapsedSeconds/60)}m ${waitElapsedSeconds%60}s`)
+    : '';
+  // Use server-side started_at for elapsed time if available — avoids resetting on page reload
+  $: activeGoal = goals.find(g => g.status === 'in_progress');
+  // void elapsedSeconds ensures Svelte tracks it as a dependency and re-evaluates every second tick
+  $: {
+    void elapsedSeconds;
+    elapsedBasis = activeGoal?.started_at
+      ? Math.floor((Date.now() - new Date(activeGoal.started_at).getTime()) / 1000)
+      : elapsedSeconds;
+  }
+  $: elapsedStr = (elapsedBasis > 0 || elapsedSeconds > 0)
+    ? (() => { const s = elapsedBasis > 0 ? elapsedBasis : elapsedSeconds; return s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`; })()
+    : '';
 </script>
 
 <svelte:head>
@@ -271,7 +422,7 @@
     <span style="color: var(--color-border); font-size: 16px; line-height: 1;">/</span>
     <span style="color: var(--color-accent); font-size: 14px;">◆</span>
     <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em;">{workspaceName}</span>
-    <WorkspaceStatus status={vmStatus} />
+    <WorkspaceStatus status={isWorking ? 'Building' : vmStatus} />
     {#if isWorkerWarming}
       <span style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
@@ -280,7 +431,7 @@
     {:else if phase === 'posting_goal'}
       <span style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
-        retry {goalRetries}/{MAX_GOAL_RETRIES}
+        Connecting to Claude… ({goalRetries}/{MAX_GOAL_RETRIES})
       </span>
     {/if}
     {#if phase === 'confirming_goal'}
@@ -288,6 +439,22 @@
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #A78BFA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         {confirmationWarning ? 'Goal queued — Claude not started yet' : 'Claude is picking up your goal…'}
       </span>
+    {/if}
+    {#if phase === 'streaming' && elapsedStr}
+      <span style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-left: 4px;">
+        {elapsedStr}
+      </span>
+    {/if}
+    {#if isWorking}
+      <button
+        on:click={cancelWorkspace}
+        style="
+          margin-left: auto; font-size: 11px; color: var(--color-text-muted); background: transparent;
+          border: 1px solid var(--color-border); border-radius: 5px;
+          padding: 2px 8px; cursor: pointer; font-family: var(--font-mono);
+          transition: color 0.15s, border-color 0.15s;
+        "
+      >✕ Cancel</button>
     {/if}
     {#if error}
       <span style="font-size: 11px; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
@@ -322,9 +489,33 @@
           ">◆</div>
         </div>
         <div class="text-center">
-          <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Provisioning VM</p>
-          <p style="font-size: 13px; color: var(--color-text-muted);">This takes about 60 seconds</p>
+          {#if vmStatus === 'Scheduling'}
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Finding your machine</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">Securing a spot in the queue…</p>
+          {:else}
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Starting your build environment</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">First builds can take a few minutes</p>
+          {/if}
         </div>
+        {#if pendingPrompt}
+          <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 10px 14px; max-width: 380px; text-align: left;">
+            <p style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-bottom: 4px; letter-spacing: 0.06em; text-transform: uppercase;">Your goal</p>
+            <p style="font-size: 13px; color: var(--color-text-secondary); line-height: 1.5;">{pendingPrompt.slice(0, 160)}{pendingPrompt.length > 160 ? '…' : ''}</p>
+          </div>
+        {/if}
+        {#if waitElapsedStr}
+          <p style="font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono);">⏱ {waitElapsedStr}</p>
+        {/if}
+        <p style="font-size: 12px; color: var(--color-text-muted);">You can close this tab and come back — your project will keep its URL.</p>
+        <button
+          on:click={cancelWorkspace}
+          style="
+            font-size: 11px; color: var(--color-text-muted); background: transparent;
+            border: 1px solid var(--color-border); border-radius: 6px;
+            padding: 4px 12px; cursor: pointer; font-family: var(--font-mono);
+            transition: color 0.15s, border-color 0.15s;
+          "
+        >Cancel</button>
         {#if (events as Array<{reason?: string; message?: string}>).length > 0}
           <div style="
             font-family: var(--font-mono);
@@ -350,13 +541,14 @@
           {activity}
           disabled={isWorking}
           {workspaceName}
+          pendingGoal={pendingPrompt}
           on:prompt={handlePrompt}
         />
       </div>
 
       <!-- Right: Live preview -->
       <div class="flex-1 overflow-hidden">
-        <LivePreview {workspace} {previewActive} />
+        <LivePreview {workspace} {previewActive} {isWorking} {isReady} />
       </div>
     {/if}
   </div>
