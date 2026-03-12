@@ -25,6 +25,7 @@ export interface CreateWorkspaceRequest {
   bootstrapSecretName: string;
   runStrategy: string;
   idleHaltAfterMinutes: number;
+  goal?: string;
 }
 
 // All calls go to /api/proxy/* which SvelteKit server routes forward to workstation-api

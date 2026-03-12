@@ -14,6 +14,7 @@
   let name = '';
   let prompt = '';
   let nameError = '';
+  let nameInput: HTMLInputElement;
 
   // Cross-platform submit hint
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
@@ -21,10 +22,10 @@
 
   const examplePrompts = [
     'Build a markdown notes app with local storage',
+    'Make a personal recipe collection site',
     'Create a real-time kanban board',
     'Make a link shortener with click tracking',
-    'Build a JSON formatter and validator tool',
-    'Create a pomodoro timer with stats',
+    'Build a pomodoro timer with stats',
   ];
 
   onMount(async () => {
@@ -73,7 +74,8 @@
 
   async function handleCreate() {
     nameError = validateName(name);
-    if (nameError || !prompt.trim()) return;
+    if (nameError) { nameInput?.focus(); return; }
+    if (!prompt.trim()) return;
 
     creating = true;
     error = '';
@@ -84,9 +86,9 @@
         bootstrapSecretName: 'claude-worker-bootstrap',
         runStrategy: 'Always',
         idleHaltAfterMinutes: 60,
+        goal: prompt.trim() || undefined,
       });
-      sessionStorage.setItem(`initial_prompt_${name}`, prompt.trim());
-      goto(`/projects/${name}`);
+      goto(`/projects/${name}?goal=${encodeURIComponent(prompt.trim())}`);
     } catch (e) {
       error = String(e);
       creating = false;
@@ -154,7 +156,7 @@
         background-clip: text;
       ">Build something amazing</h1>
       <p style="font-size: 16px; color: var(--color-text-secondary); line-height: 1.6;">
-        Describe what you want to build. Claude will provision a VM, write the code, and deploy it live.
+        Describe what you want to create. Claude handles everything — writing the code, building it, and making it live.
       </p>
     </div>
 
@@ -169,13 +171,14 @@
       box-shadow: 0 0 0 1px rgba(99,102,241,0.05), 0 24px 48px rgba(0,0,0,0.3);
     ">
       <!-- Name row -->
-      <div style="display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--color-border);">
+      <div style="display: flex; align-items: center; gap: 0; border-bottom: 1px solid {nameError ? 'rgba(248,113,113,0.6)' : 'var(--color-border)'}; transition: border-color 0.15s;">
         <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">project /</span>
         <input
           type="text"
           bind:value={name}
+          bind:this={nameInput}
           on:input={() => { nameError = validateName(name); onProjectNameChange(name); }}
-          placeholder="my-app"
+          placeholder="my-project"
           style="
             flex: 1;
             background: transparent;
@@ -196,7 +199,7 @@
       <textarea
         bind:value={prompt}
         on:keydown={handleKeydown}
-        placeholder="What do you want to build?&#10;&#10;Try: Build a REST API with auth, or Create a Tailwind landing page..."
+        placeholder="What do you want to create?&#10;&#10;Try: Make a recipe collection site, or Build a habit tracker with streaks..."
         rows={5}
         style="
           width: 100%;
