@@ -53,8 +53,10 @@ function humanizePath(path: string, prefix: string): string {
   if (/\.(css|scss|pcss)$/.test(basename)) return `${prefix} Styling your app`;
   if (/\.html?$/.test(basename)) return `${prefix} Updating layout`;
   // Infrastructure / GitOps file operations — suppress entirely (never user-visible)
+  // Only apply basename filter when NOT inside a user project directory.
+  const isUserProject = /\/projects\/[^/]+\//.test(path);
   if (/\/(apps|homelab-gitops)\//i.test(path) ||
-      /\b(kustomization|namespace|service|ingress)\.ya?ml$/i.test(basename)) {
+      (!isUserProject && /\b(kustomization|namespace|service|ingress)\.ya?ml$/i.test(basename))) {
     return '';  // empty string → caller's if (text.trim()) guard suppresses it
   }
   // Known build-toolchain hidden directories — show as generic step (not user-visible project files)
@@ -123,7 +125,7 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             }
             // GitOps / CI infrastructure — translate flux to friendly message, suppress auth checks
             if (/\bflux\b/i.test(desc)) {
-              return { id: nextId(), kind: 'hook', text: '⚙ Deploying your app…', timestamp: new Date(), color: 'text-purple-400' };
+              return { id: nextId(), kind: 'hook', text: '⚙ Rolling out update…', timestamp: new Date(), color: 'text-purple-400' };
             }
             if (/\bgh\s+auth\b/i.test(desc) || /\bskopeo\b.*inspect\b/i.test(desc)) return null;
             // Nix/musl toolchain setup — translate to friendly label
