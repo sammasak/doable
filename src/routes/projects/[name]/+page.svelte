@@ -22,6 +22,8 @@
   let error = '';
 
   let previewActive = false;
+  let isDeploying = false;
+  let deployGoalId: string | null = null;
   let previewPollInterval: ReturnType<typeof setInterval>;
 
   let pollInterval: ReturnType<typeof setInterval>;
@@ -230,6 +232,14 @@
   async function loadGoals() {
     try {
       goals = await getGoals(workspaceName);
+      // Clear deploy state when deploy goal completes
+      if (deployGoalId) {
+        const dg = goals.find(g => g.id === deployGoalId);
+        if (dg && (dg.status === 'done' || dg.status === 'reviewed' || dg.status === 'failed')) {
+          isDeploying = false;
+          deployGoalId = null;
+        }
+      }
       if (goals.some(g => g.status === 'done' || g.status === 'reviewed')) {
         isReady = true;
       }
@@ -427,6 +437,27 @@
     await postGoalWithRetry(prompt);
   }
 
+  async function handleDeploy() {
+    if (isDeploying || !workspace?.ipAddress) return;
+    isDeploying = true;
+    deployGoalId = null;
+    activity = [];
+    recentActivityTexts.clear();
+    clearInterval(staleActivityInterval);
+    lastRealActivityAt = 0;
+    staleActivityCount = 0;
+    try {
+      const goal = await addGoal(workspaceName, 'Deploy the current app to production');
+      goals = [...goals, goal];
+      deployGoalId = goal.id;
+      phase = 'confirming_goal';
+      startConfirmation(goal.id);
+    } catch (e) {
+      isDeploying = false;
+      error = `Deploy failed: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
   $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown');
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
   $: waitElapsedStr = waitElapsedSeconds > 0
@@ -586,7 +617,7 @@
 
       <!-- Right: Live preview -->
       <div class="flex-1 overflow-hidden">
-        <LivePreview {workspace} {previewActive} {isWorking} {isReady} />
+        <LivePreview {workspace} {previewActive} {isWorking} {isReady} {isDeploying} on:deploy={handleDeploy} />
       </div>
     {/if}
   </div>
