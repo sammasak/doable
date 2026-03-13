@@ -107,6 +107,8 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             // Internal state management calls — hide from user
             // Left branch: curl PUT to goals endpoint. Right branch: /goals/<id> with JSON "status" key
             if (/\bcurl\b[^"']*\bPUT\b[^"']*\/goals\/|\/goals\/[a-z0-9_-]{6,}.*"status"\s*:/i.test(desc)) return null;
+            // jq goal status updates (mark in_progress / done / failed on goals.json)
+            if (/\bjq\b/.test(desc) && /goals\.json/.test(desc)) return null;
             // Compilation/build steps — show as friendly progress instead of filtering
             if (/\b(build|compile|compiling)\b/i.test(desc) && /\b(binary|bin|static|release|musl|cargo|target)\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Building your app...', timestamp: new Date(), color: 'text-yellow-500' };
