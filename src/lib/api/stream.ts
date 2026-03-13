@@ -140,6 +140,8 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             // Filter out build-toolchain internals and absolute system paths (noise for end users)
             if (/\b(nix\b|lld\b|llvm\b|linker|wrapper|musl\b|rustflag|glibc)\b/i.test(desc)) return null;
             if (/\/var\/lib\/|\/var\/run\/|\/usr\/share\/|\/nix\/store\//.test(desc)) return null;
+            // Internal task monitoring — background task output checks (ls, cat, tail on /tmp/)
+            if (/\/(tmp|var\/lib\/claude-worker)\//i.test(desc) && /^(ls|cat|tail|head)\b/i.test(desc)) return null;
           } else if (tool === 'Write') {
             text = humanizePath(input.file_path ?? '', '+');
             color = 'text-green-400';
