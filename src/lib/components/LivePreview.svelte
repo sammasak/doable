@@ -33,7 +33,7 @@
   // Fetch deployed URL when workspace changes
   $: if (workspace?.name) {
     getDeployedUrl(workspace.name).then(url => {
-      deployedUrl = url;
+      if (url && url !== deployedUrl) deployedUrl = url;
     });
   }
 
@@ -41,7 +41,7 @@
   $: {
     if (prevIsDeploying && !isDeploying && workspace?.name) {
       getDeployedUrl(workspace.name).then(url => {
-        deployedUrl = url;
+        if (url && url !== deployedUrl) deployedUrl = url;
       });
     }
     prevIsDeploying = isDeploying;
@@ -157,7 +157,7 @@
           src={proxyBase}
           title="Live preview"
           class="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups"
+          sandbox="allow-scripts allow-popups"
         ></iframe>
       {/key}
     {:else}
