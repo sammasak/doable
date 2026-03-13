@@ -63,6 +63,8 @@
   let waitStartedAt: number = 0;
   let waitElapsedSeconds: number = 0;
   let waitElapsedInterval: ReturnType<typeof setInterval>;
+  // Persists across stream reconnects so the cap is honoured for the full session.
+  let staleActivityCount = 0;
 
   // State machine
   type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
@@ -347,8 +349,7 @@
 
     // Inject a patience message if no real activity appears for STALE_ACTIVITY_MS.
     // Bypasses dedup intentionally — this is a synthetic heartbeat, not an SSE replay.
-    // Capped at 3 repetitions to avoid spam during long builds.
-    let staleActivityCount = 0;
+    // Capped at 3 repetitions across ALL reconnects (staleActivityCount is module-level).
     staleActivityInterval = setInterval(() => {
       if (phase === 'streaming' && Date.now() - lastRealActivityAt >= STALE_ACTIVITY_MS) {
         if (staleActivityCount >= 3) return; // cap — user knows it's still working
@@ -415,6 +416,7 @@
     recentActivityTexts.clear();
     clearInterval(staleActivityInterval);
     lastRealActivityAt = 0;
+    staleActivityCount = 0; // reset cap for new goal session
     pendingPrompt = prompt;
     pendingPromptIsSpecGoal = false; // user-entered follow-up goal — must call addGoal()
     await postGoalWithRetry(prompt);
