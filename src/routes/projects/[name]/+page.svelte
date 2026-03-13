@@ -46,6 +46,7 @@
   const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
   const STALE_ACTIVITY_MS = 65_000;  // inject a patience message after this much silence
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
+  const SPEC_GOAL_TIMEOUT_MS = 300_000;   // 5 min: give up waiting for controller to post spec goal
 
   let goalRetries = 0;       // generic HTTP errors — fast cap (10 × 5s = 50s)
   const MAX_GOAL_RETRIES = 10;
@@ -69,10 +70,16 @@
   // Seed pendingPrompt from SSR data immediately so the provisioning overlay shows the goal
   // on first paint (including page reloads). The controller posts spec.goal to the VM — we
   // must NOT call addGoal() for it.
-  let pendingPrompt: string | null = data.workspace?.goal ?? null;
+  // If goalPosted is already true, the goal was already delivered — don't show the "Submitting…"
+  // spinner even if spec.goal is still present on the CRD.
+  const _specGoalAlreadyPosted = !!data.workspace?.goalPosted;
+  let pendingPrompt: string | null = (_specGoalAlreadyPosted ? null : (data.workspace?.goal ?? null));
   // True when pendingPrompt came from workspace.spec.goal — the controller posts it,
   // so we must NOT call addGoal() for it. False when it came from the chat input.
-  let pendingPromptIsSpecGoal: boolean = !!data.workspace?.goal;
+  let pendingPromptIsSpecGoal: boolean = !_specGoalAlreadyPosted && !!data.workspace?.goal;
+  // Timestamp when we first started waiting for the controller to post the spec goal.
+  // Used to add a timeout/fallback if the controller never delivers.
+  let specGoalWaitStartedAt: number = 0;
 
   onMount(async () => {
     // Clean up legacy localStorage keys from the old ?goal= redirect approach.
@@ -151,12 +158,21 @@
           }
           phase = 'streaming';
           connectStream();
+        } else if (goals.length > 0 && pendingPromptIsSpecGoal) {
+          // Goals exist but none are active — spec goal was already posted and completed.
+          // Clear the "Submitting your goal…" spinner so the user sees the completed state.
+          pendingPrompt = null;
+          pendingPromptIsSpecGoal = false;
+          phase = 'idle';
         } else if (pendingPrompt && !pendingPromptIsSpecGoal) {
           // A follow-up goal was posted via handlePrompt before the VM became ready
           phase = 'posting_goal';
           await postGoalWithRetry(pendingPrompt);
         } else {
-          // Either waiting for the controller to pick up spec.goal, or truly idle
+          // Waiting for the controller to pick up spec.goal, or truly idle
+          if (pendingPromptIsSpecGoal && specGoalWaitStartedAt === 0) {
+            specGoalWaitStartedAt = Date.now(); // start the timeout clock
+          }
           phase = 'idle';
         }
 
@@ -172,6 +188,17 @@
           pendingPromptIsSpecGoal = false;
           phase = 'streaming';
           connectStream();
+        } else if (goals.length > 0) {
+          // Goals exist but none are active — spec goal was already posted and completed.
+          pendingPrompt = null;
+          pendingPromptIsSpecGoal = false;
+        } else if (specGoalWaitStartedAt > 0 && Date.now() - specGoalWaitStartedAt > SPEC_GOAL_TIMEOUT_MS) {
+          // Waited 5 minutes with no goals appearing — controller may have failed.
+          // Fall back to idle so the user can post the goal manually via the chat input.
+          pendingPrompt = null;
+          pendingPromptIsSpecGoal = false;
+          specGoalWaitStartedAt = 0;
+          error = 'Your goal couldn\'t be started automatically. Type it below to try again.';
         }
       } else if (!running) {
         clearInterval(previewPollInterval);

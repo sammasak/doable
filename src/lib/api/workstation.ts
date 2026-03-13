@@ -7,6 +7,7 @@ export interface Workspace {
   createdAt?: string;
   previewUrl?: string;
   goal?: string;
+  goalPosted?: boolean;
 }
 
 export interface Goal {
