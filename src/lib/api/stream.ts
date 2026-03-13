@@ -128,6 +128,10 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
               return { id: nextId(), kind: 'hook', text: '⚙ Rolling out update…', timestamp: new Date(), color: 'text-purple-400' };
             }
             if (/\bgh\s+auth\b/i.test(desc) || /\bskopeo\b.*inspect\b/i.test(desc)) return null;
+            // Health-check curl against the deployed app — translate to friendly message
+            if (/\bcurl\b/i.test(desc) && /https?:\/\//i.test(desc) && !/\/goals\//i.test(desc)) {
+              return { id: nextId(), kind: 'hook', text: '✓ Verifying your app is accessible…', timestamp: new Date(), color: 'text-green-400' };
+            }
             // Nix/musl toolchain setup — translate to friendly label
             if (/\bpkgsMusl\b|nix\s+(develop|build|eval|shell|instantiate)\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Getting your tools ready…', timestamp: new Date(), color: 'text-blue-400' };
