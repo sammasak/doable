@@ -235,9 +235,13 @@
       // Clear deploy state when deploy goal completes
       if (deployGoalId) {
         const dg = goals.find(g => g.id === deployGoalId);
-        if (dg && (dg.status === 'done' || dg.status === 'reviewed' || dg.status === 'failed')) {
+        if (dg && (dg.status === 'done' || dg.status === 'reviewed')) {
           isDeploying = false;
           deployGoalId = null;
+        } else if (dg && dg.status === 'failed') {
+          isDeploying = false;
+          deployGoalId = null;
+          error = 'Deploy failed. Check the activity log or click Deploy to try again.';
         }
       }
       if (goals.some(g => g.status === 'done' || g.status === 'reviewed')) {
@@ -441,15 +445,15 @@
     if (phase !== 'idle' || isDeploying || !workspace?.ipAddress) return;
     isDeploying = true;
     deployGoalId = null;
-    activity = [];
-    recentActivityTexts.clear();
-    clearInterval(staleActivityInterval);
-    lastRealActivityAt = 0;
-    staleActivityCount = 0;
     try {
       const goal = await addGoal(workspaceName, 'Deploy the current app to production');
       goals = [...goals, goal];
       deployGoalId = goal.id;
+      activity = [];
+      recentActivityTexts.clear();
+      clearInterval(staleActivityInterval);
+      lastRealActivityAt = 0;
+      staleActivityCount = 0;
       phase = 'confirming_goal';
       startConfirmation(goal.id);
     } catch (e) {
