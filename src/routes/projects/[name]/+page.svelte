@@ -33,8 +33,8 @@
   let lastRealActivityAt = 0;
   let eventSource: EventSource | null = null;
   // Suppress replays of the same activity text within this window (handles SSE reconnect re-sends).
-  // 5 minutes covers typical single-goal session length; cleared on new goal in handlePrompt.
-  const ACTIVITY_DEDUP_MS = 300_000;
+  // 30 seconds prevents rapid duplicates while allowing the same message to recur in later steps.
+  const ACTIVITY_DEDUP_MS = 30_000;
   const recentActivityTexts = new Map<string, number>();
 
   // Polling and timeout intervals (ms)
@@ -46,7 +46,7 @@
   const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
   const STALE_ACTIVITY_MS = 65_000;  // inject a patience message after this much silence
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
-  const SPEC_GOAL_TIMEOUT_MS = 300_000;   // 5 min: give up waiting for controller to post spec goal
+  const SPEC_GOAL_TIMEOUT_MS = 120_000;   // 2 min: give up waiting for controller to post spec goal
 
   let goalRetries = 0;       // generic HTTP errors — fast cap (10 × 5s = 50s)
   const MAX_GOAL_RETRIES = 10;
@@ -195,12 +195,12 @@
           pendingPrompt = null;
           pendingPromptIsSpecGoal = false;
         } else if (specGoalWaitStartedAt > 0 && Date.now() - specGoalWaitStartedAt > SPEC_GOAL_TIMEOUT_MS) {
-          // Waited 5 minutes with no goals appearing — controller may have failed.
+          // Waited 2 minutes with no goals appearing — controller may have failed.
           // Fall back to idle so the user can post the goal manually via the chat input.
-          pendingPrompt = null;
+          // Keep pendingPrompt so the goal text remains pre-filled in the textarea.
           pendingPromptIsSpecGoal = false;
           specGoalWaitStartedAt = 0;
-          error = 'Your goal couldn\'t be started automatically. Type it below to try again.';
+          error = 'Couldn\'t connect to your workspace. Click below to try again.';
         }
       } else if (!running) {
         clearInterval(previewPollInterval);
