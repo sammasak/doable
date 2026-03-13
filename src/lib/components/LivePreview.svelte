@@ -4,8 +4,12 @@
 
   export let workspace: Workspace | null = null;
   export let previewActive: boolean = false;
+  export let isWorking: boolean = false;
+  export let isReady: boolean = false;
 
   let key = 0;
+  let bannerDismissed = false;
+  let prevIsReady = false;
   type Tab = 'dev' | 'deployed';
 
   // Default: dev if preview is active, otherwise deployed
@@ -45,6 +49,23 @@
       deployedUrlLoading = false;
     });
   }
+
+  // Reset banner only on isReady false→true transition (not level-triggered)
+  $: {
+    if (isReady && !prevIsReady) bannerDismissed = false;
+    prevIsReady = isReady;
+  }
+
+  // Re-fetch deployed URL when goal completes — Claude may have just published the URL
+  $: if (isReady && workspace?.name && !deployedUrl) {
+    getDeployedUrl(workspace.name).then(url => {
+      if (url) {
+        deployedUrl = url;
+        deployedUrlLoading = false;
+        activeTab = 'deployed';
+      }
+    });
+  }
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
@@ -82,8 +103,8 @@
           font-family: var(--font-mono);
           border: none;
           border-right: 1px solid var(--color-border);
-          background: {activeTab === 'dev' ? 'var(--color-accent)' : 'transparent'};
-          color: {activeTab === 'dev' ? '#fff' : 'var(--color-text-muted)'};
+          background: {activeTab === 'dev' && previewActive ? 'var(--color-accent)' : 'transparent'};
+          color: {activeTab === 'dev' && previewActive ? '#fff' : 'var(--color-text-muted)'};
           cursor: {previewActive ? 'pointer' : 'not-allowed'};
           opacity: {!previewActive ? 0.4 : 1};
           transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -98,8 +119,8 @@
           font-size: 11px;
           font-family: var(--font-mono);
           border: none;
-          background: {activeTab === 'deployed' ? 'var(--color-accent)' : 'transparent'};
-          color: {activeTab === 'deployed' ? '#fff' : 'var(--color-text-secondary)'};
+          background: {activeTab === 'deployed' && deployedUrl ? 'var(--color-accent)' : 'transparent'};
+          color: {activeTab === 'deployed' && deployedUrl ? '#fff' : 'var(--color-text-secondary)'};
           cursor: {deployedUrl ? 'pointer' : 'not-allowed'};
           opacity: {!deployedUrl ? 0.4 : 1};
           transition: background 0.15s, color 0.15s, opacity 0.15s;
@@ -129,6 +150,24 @@
         {addressText}
       </span>
     </div>
+    {#if activeTab === 'deployed' && deployedUrl}
+      <a
+        href={deployedUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open in new tab"
+        style="
+          flex-shrink: 0; height: 26px; border-radius: 6px;
+          border: 1px solid var(--color-border); background: transparent;
+          color: var(--color-text-muted); font-size: 11px; font-family: var(--font-mono);
+          display: flex; align-items: center; gap: 4px;
+          padding: 0 8px;
+          cursor: pointer; transition: color 0.15s, border-color 0.15s;
+          text-decoration: none; white-space: nowrap;
+        "
+        class="hover-border-accent"
+      >Open ↗</a>
+    {/if}
     <button
       on:click={reload}
       title="Reload preview"
@@ -155,6 +194,35 @@
         ></iframe>
       {/key}
     {:else if activeTab === 'deployed' && deployedUrl}
+      {#if isReady && !bannerDismissed}
+        <div style="
+          padding: 8px 14px;
+          background: rgba(34,197,94,0.08);
+          border-bottom: 1px solid rgba(34,197,94,0.2);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          flex-shrink: 0;
+        ">
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-success);">
+            ✓ Your app is live!
+          </span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <a
+              href={deployedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style="font-family: var(--font-mono); font-size: 11px; color: var(--color-success); text-decoration: underline; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+            >{deployedUrl.replace('https://', '')}</a>
+            <button
+              on:click={() => bannerDismissed = true}
+              style="background: none; border: none; cursor: pointer; color: var(--color-text-muted); font-size: 14px; line-height: 1; padding: 0;"
+              title="Dismiss"
+            >×</button>
+          </div>
+        </div>
+      {/if}
       {#key key}
         <iframe
           src={deployedUrl}
@@ -182,12 +250,18 @@
           </div>
         </div>
         <div class="text-center">
-          {#if activeTab === 'deployed' && !deployedUrlLoading}
+          {#if activeTab === 'deployed' && deployedUrlLoading}
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Checking for deployment…</p>
+          {:else if activeTab === 'deployed'}
             <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No deployment yet</p>
-            <p style="font-size: 12px; color: var(--color-text-muted);">Deploy to production to see a live URL here</p>
+            {#if isWorking}
+              <p style="font-size: 12px; color: var(--color-text-muted);">Claude will deploy your app here automatically when it's ready</p>
+            {:else}
+              <p style="font-size: 12px; color: var(--color-text-muted);">Your deployed app will appear here once Claude finishes building</p>
+            {/if}
           {:else}
-            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview</p>
-            <p style="font-size: 12px; color: var(--color-text-muted);">Use the PREVIEW skill to start a dev server</p>
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview available</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Your app will appear here once it's running</p>
           {/if}
         </div>
       </div>

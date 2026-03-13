@@ -320,12 +320,16 @@
 
     // Inject a patience message if no real activity appears for STALE_ACTIVITY_MS.
     // Bypasses dedup intentionally — this is a synthetic heartbeat, not an SSE replay.
+    // Capped at 3 repetitions to avoid spam during long builds.
+    let staleActivityCount = 0;
     staleActivityInterval = setInterval(() => {
       if (phase === 'streaming' && Date.now() - lastRealActivityAt >= STALE_ACTIVITY_MS) {
+        if (staleActivityCount >= 3) return; // cap — user knows it's still working
+        staleActivityCount += 1;
         activity = [...activity, {
           id: String(Date.now()),
           kind: 'hook' as const,
-          text: '⚙ Still building… hang tight',
+          text: staleActivityCount < 3 ? '⚙ Still building… hang tight' : '⚙ Still working in the background…',
           timestamp: new Date(),
           color: 'text-yellow-400',
         }];
