@@ -194,13 +194,18 @@
           // Goals exist but none are active — spec goal was already posted and completed.
           pendingPrompt = null;
           pendingPromptIsSpecGoal = false;
+        } else if (workspace.goalPostingError && pendingPromptIsSpecGoal) {
+          // Controller tried to post the spec goal but the worker rejected it.
+          error = `Couldn't deliver your goal to the workspace. ${workspace.goalPostingError.slice(0, 100)}. Click "Try again" to resubmit.`;
+          pendingPromptIsSpecGoal = false;
+          pendingPrompt = null;
         } else if (specGoalWaitStartedAt > 0 && Date.now() - specGoalWaitStartedAt > SPEC_GOAL_TIMEOUT_MS) {
           // Waited 2 minutes with no goals appearing — controller may have failed.
           // Fall back to idle so the user can post the goal manually via the chat input.
           // Keep pendingPrompt so the goal text remains pre-filled in the textarea.
           pendingPromptIsSpecGoal = false;
           specGoalWaitStartedAt = 0;
-          error = 'Couldn\'t connect to your workspace. Click below to try again.';
+          error = 'Your workspace took too long to start. Click "Try again" to resubmit your goal, or refresh to check if it arrived.';
         }
       } else if (!running) {
         clearInterval(previewPollInterval);

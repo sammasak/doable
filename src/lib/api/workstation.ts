@@ -8,6 +8,7 @@ export interface Workspace {
   previewUrl?: string;
   goal?: string;
   goalPosted?: boolean;
+  goalPostingError?: string;
 }
 
 export interface Goal {

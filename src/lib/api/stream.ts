@@ -1,9 +1,10 @@
 export interface ActivityItem {
   id: string;
-  kind: 'hook' | 'text' | 'done' | 'failed' | 'error';
+  kind: 'hook' | 'text' | 'done' | 'failed' | 'error' | 'tool';
   text: string;
   timestamp: Date;
   color: string;
+  dim?: boolean;
 }
 
 let idCounter = 0;
@@ -29,6 +30,34 @@ function formatGoalLifecycle(hook: GoalLifecycleEvent): { text: string; color: s
   }
 }
 
+function translateToolUse(name: string, input: Record<string, unknown>): string | null {
+  if (name === 'Write' || name === 'Edit' || name === 'NotebookEdit') {
+    const path = (input?.file_path || input?.path || '') as string;
+    if (path) {
+      const parts = path.split('/');
+      const short = parts.slice(-2).join('/');
+      return `Writing ${short}`;
+    }
+  }
+  if (name === 'Bash') {
+    const cmd = ((input?.command || '') as string).trim().split('\n')[0].slice(0, 80);
+    if (cmd.includes('pip install') || cmd.includes('uv install')) return 'Installing dependencies…';
+    if (cmd.includes('buildah build')) return 'Building container image…';
+    if (cmd.includes('buildah push')) return 'Uploading image to registry…';
+    if (cmd.includes('kubectl') || cmd.includes('flux reconcile')) return 'Deploying to Kubernetes…';
+    if (cmd.includes('git push')) return 'Pushing code…';
+    if (cmd.includes('git clone') || cmd.includes('gh repo clone')) return 'Cloning repository…';
+    if (cmd.includes('nix develop') || cmd.includes('nix run')) return 'Setting up build environment…';
+    if (cmd.includes('curl') && cmd.includes('health')) return 'Verifying deployment…';
+    // Don't show generic bash commands
+    return null;
+  }
+  if (name === 'Read' || name === 'Glob' || name === 'Grep') {
+    return null; // Too noisy — suppress file reads
+  }
+  return null;
+}
+
 export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
   const data = event.data as string;
 
@@ -40,28 +69,44 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
     return { id: nextId(), kind: 'failed', text: '✗ Something went wrong', timestamp: new Date(), color: 'text-red-400' };
   }
 
-  // Only hook events from POST /events — everything else ignored
-  if (event.type !== 'hook') return null;
+  // Structured hook events (progress, goal lifecycle, etc.)
+  if (event.type === 'hook') {
+    try {
+      const hook = JSON.parse(data) as Record<string, unknown>;
 
-  try {
-    const hook = JSON.parse(data) as Record<string, unknown>;
+      // Agent-posted progress events (from CLAUDE.md curl calls)
+      if (hook.type === 'progress' && typeof hook.message === 'string' && hook.message.trim()) {
+        return { id: nextId(), kind: 'hook', text: hook.message.trim(), timestamp: new Date(), color: 'text-gray-300' };
+      }
 
-    // Agent-posted progress events (from CLAUDE.md curl calls)
-    if (hook.type === 'progress' && typeof hook.message === 'string' && hook.message.trim()) {
-      return { id: nextId(), kind: 'hook', text: hook.message.trim(), timestamp: new Date(), color: 'text-gray-300' };
+      // Goal lifecycle events from check-goals.sh stop hook
+      if (hook.type === 'goal_loop' || hook.type === 'review_start' || hook.type === 'session_end') {
+        const fmt = formatGoalLifecycle(hook as GoalLifecycleEvent);
+        if (fmt) return { id: nextId(), kind: 'hook', text: fmt.text, timestamp: new Date(), color: fmt.color };
+      }
+
+      // All other hook types (tool_start, file_op) — silently dropped
+      return null;
+    } catch {
+      return null;
     }
-
-    // Goal lifecycle events from check-goals.sh stop hook
-    if (hook.type === 'goal_loop' || hook.type === 'review_start' || hook.type === 'session_end') {
-      const fmt = formatGoalLifecycle(hook as GoalLifecycleEvent);
-      if (fmt) return { id: nextId(), kind: 'hook', text: fmt.text, timestamp: new Date(), color: fmt.color };
-    }
-
-    // All other hook types (tool_start, file_op) — silently dropped
-    return null;
-  } catch {
-    return null;
   }
+
+  // Dim fallback: parse Claude CLI tool_use events from raw SSE lines.
+  // These show activity when no explicit progress events are flowing.
+  // Only reached when event.type !== 'hook' (raw claude output lines).
+  try {
+    const msg = JSON.parse(data);
+    if (msg.type === 'tool_use') {
+      const label = translateToolUse(msg.name, msg.input ?? {});
+      if (label) {
+        return { id: nextId(), kind: 'tool', text: label, dim: true, timestamp: new Date(), color: 'text-gray-500' };
+      }
+    }
+  } catch {
+    // Not JSON — ignore
+  }
+  return null;
 }
 
 export function createEventSource(workspaceName: string): EventSource {

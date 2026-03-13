@@ -12,15 +12,30 @@
     }
   });
 
+  // Maps Tailwind text color classes (stored on ActivityItem.color) to hex values
+  const COLOR_HEX: Record<string, string> = {
+    'text-yellow-500': '#F59E0B',
+    'text-yellow-400': '#FBBF24',
+    'text-blue-400': '#60A5FA',
+    'text-green-400': '#34D399',
+    'text-purple-400': '#C084FC',
+    'text-gray-400': '#9CA3AF',
+    'text-gray-500': '#6B7280',
+    'text-gray-300': '#D1D5DB',
+    'text-gray-100': '#F3F4F6',
+    'text-red-400': '#F87171',
+  };
+
   function getStyle(item: ActivityItem): { borderColor: string; color: string } {
+    const textColor = COLOR_HEX[item.color] ?? '#6B7280';
     const text = item.text || '';
-    if (text.startsWith('$')) return { borderColor: '#6B7280', color: '#9CA3AF' };
-    if (text.startsWith('+')) return { borderColor: '#10B981', color: '#34D399' };
-    if (text.startsWith('~')) return { borderColor: '#6366F1', color: '#818CF8' };
-    if (text.startsWith('↻')) return { borderColor: '#F59E0B', color: '#FCD34D' };
-    if (text.startsWith('◎')) return { borderColor: '#A855F7', color: '#C084FC' };
-    if (text.startsWith('✓')) return { borderColor: '#10B981', color: '#34D399' };
-    return { borderColor: '#4A5068', color: '#6B7280' };
+    if (text.startsWith('$')) return { borderColor: '#6B7280', color: textColor };
+    if (text.startsWith('+')) return { borderColor: '#10B981', color: textColor };
+    if (text.startsWith('~')) return { borderColor: '#6366F1', color: textColor };
+    if (text.startsWith('↻') || text.startsWith('↺') || text.startsWith('⚙')) return { borderColor: '#F59E0B', color: textColor };
+    if (text.startsWith('◎')) return { borderColor: '#A855F7', color: textColor };
+    if (text.startsWith('✓')) return { borderColor: '#10B981', color: textColor };
+    return { borderColor: textColor, color: textColor };
   }
 </script>
 
@@ -41,6 +56,7 @@
         white-space: pre-wrap;
         border-left: 2px solid {style.borderColor};
         color: {style.color};
+        {item.dim ? 'opacity: 0.45; font-style: italic;' : ''}
       "
     >
       {item.text}
