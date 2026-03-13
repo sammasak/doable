@@ -117,6 +117,9 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             if (/\bbuildah push\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Uploading app image...', timestamp: new Date(), color: 'text-blue-400' };
             }
+            // All other buildah subcommands (run, from, mount, unshare, commit, inspect, rm, images, etc.)
+            // are internal container manipulation — suppress rather than show confusing raw commands
+            if (/^buildah\s+\w/i.test(desc)) return null;
             if (/\bkubectl\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Deploying your app...', timestamp: new Date(), color: 'text-purple-400' };
             }
