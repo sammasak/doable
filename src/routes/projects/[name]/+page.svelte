@@ -438,7 +438,7 @@
   }
 
   async function handleDeploy() {
-    if (isDeploying || !workspace?.ipAddress) return;
+    if (phase !== 'idle' || isDeploying || !workspace?.ipAddress) return;
     isDeploying = true;
     deployGoalId = null;
     activity = [];
