@@ -135,13 +135,30 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
             if (/\bcurl\b/i.test(desc) && /https?:\/\//i.test(desc) && !/\/goals\//i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '✓ Verifying your app is accessible…', timestamp: new Date(), color: 'text-green-400' };
             }
-            // Nix/musl toolchain setup — translate to friendly label
-            if (/\bpkgsMusl\b|nix\s+(develop|build|eval|shell|instantiate)\b/i.test(desc)) {
+            // Translate nix develop --command patterns to specific friendly messages
+            if (/nix\s+develop\b/i.test(desc)) {
+              if (/\bbuildah\s+build\b/i.test(desc)) {
+                return { id: nextId(), kind: 'hook', text: '⚙ Packaging app for deployment...', timestamp: new Date(), color: 'text-blue-400' };
+              }
+              if (/\bbuildah\s+push\b/i.test(desc)) {
+                return { id: nextId(), kind: 'hook', text: '⚙ Uploading app image...', timestamp: new Date(), color: 'text-blue-400' };
+              }
+              if (/\bbuildah\b/i.test(desc)) return null; // other buildah subcommands via nix develop
+              if (/\buvicorn\b|\bgunicorn\b/i.test(desc)) {
+                return { id: nextId(), kind: 'hook', text: '⚙ Starting dev preview...', timestamp: new Date(), color: 'text-green-400' };
+              }
+              if (/\bpip\s+install\b|\buv\s+(sync|install|pip)\b/i.test(desc)) {
+                return { id: nextId(), kind: 'hook', text: '⚙ Installing dependencies...', timestamp: new Date(), color: 'text-yellow-400' };
+              }
+              return { id: nextId(), kind: 'hook', text: '⚙ Getting your tools ready…', timestamp: new Date(), color: 'text-blue-400' };
+            }
+            // Pure nix commands and musl toolchain setup → generic label
+            if (/\bpkgsMusl\b|nix\s+(build|eval|shell|instantiate)\b/i.test(desc)) {
               return { id: nextId(), kind: 'hook', text: '⚙ Getting your tools ready…', timestamp: new Date(), color: 'text-blue-400' };
             }
             text = `$ ${desc.slice(0, 70)}`;
             // Filter out build-toolchain internals and absolute system paths (noise for end users)
-            if (/\b(nix\b|lld\b|llvm\b|linker|wrapper|musl\b|rustflag|glibc)\b/i.test(desc)) return null;
+            if (/\b(lld\b|llvm\b|linker|wrapper|musl\b|rustflag|glibc)\b/i.test(desc)) return null;
             if (/\/var\/lib\/|\/var\/run\/|\/usr\/share\/|\/nix\/store\//.test(desc)) return null;
             // Internal task monitoring — background task output checks (ls, cat, tail on /tmp/)
             if (/\/(tmp|var\/lib\/claude-worker)\//i.test(desc) && /^(ls|cat|tail|head)\b/i.test(desc)) return null;
