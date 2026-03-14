@@ -192,6 +192,24 @@
           on:load={onIframeLoad}
         ></iframe>
       {/key}
+      {#if isWorking && !hasSeenRealContent}
+        <div style="
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          padding: 6px 12px;
+          font-size: 12px;
+          background: rgba(var(--color-accent-rgb, 99, 102, 241), 0.08);
+          border-bottom: 1px solid rgba(var(--color-accent-rgb, 99, 102, 241), 0.15);
+          color: var(--color-text-muted);
+          z-index: 5;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        ">
+          <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-accent, #6366f1); animation: buildingPulse 1.5s ease-in-out infinite;"></span>
+          Claude is building your preview…
+        </div>
+      {/if}
       {#if showShimmer}
         <div style="
           position: absolute; inset: 0;
@@ -259,5 +277,9 @@
   @keyframes shimmerPulse {
     0%, 100% { opacity: 0.4; }
     50% { opacity: 0.7; }
+  }
+  @keyframes buildingPulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1); }
   }
 </style>
