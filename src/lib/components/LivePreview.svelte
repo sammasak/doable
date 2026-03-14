@@ -84,6 +84,26 @@
     }
     prevIsDeploying = isDeploying;
   }
+
+  // When isReady becomes true (goal completed), fetch the deployed URL
+  let prevIsReady = false;
+  $: if (isReady && !prevIsReady && workspace?.name) {
+    prevIsReady = isReady;
+    getDeployedUrl(workspace.name).then(url => {
+      if (url && url !== deployedUrl) deployedUrl = url;
+    });
+  }
+
+  // Use deployed URL as iframe source when ready, fall back to proxy during build
+  $: iframeSrc = (isReady && deployedUrl) ? deployedUrl : proxyBase;
+
+  // Force iframe reload when switching from proxy to deployed URL
+  let prevIframeSrc: string | null = null;
+  $: if (iframeSrc !== prevIframeSrc && prevIframeSrc !== null) {
+    prevIframeSrc = iframeSrc;
+    key += 1;
+  }
+  $: prevIframeSrc = prevIframeSrc ?? iframeSrc; // initialize on first reactive run
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
@@ -206,10 +226,10 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if previewActive && proxyBase}
+    {#if previewActive && iframeSrc}
       {#key key}
         <iframe
-          src={proxyBase}
+          src={iframeSrc}
           title="Live preview"
           class="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
