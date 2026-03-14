@@ -46,7 +46,7 @@
   const GOAL_RETRY_MS = 5_000;      // retry interval for posting a goal
   const GOAL_POLL_MS = 2_000;       // fallback goal status poll during streaming
   const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
-  const STALE_ACTIVITY_MS = 40_000;  // inject a patience message after this much silence
+  const STALE_ACTIVITY_MS = 15_000;  // inject a patience message after this much silence
   const STALE_SUBSEQUENT_MS = 25_000; // interval between subsequent stale messages
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
   const SPEC_GOAL_TIMEOUT_MS = 120_000;   // 2 min: give up waiting for controller to post spec goal
@@ -78,15 +78,34 @@
   let lastStaleAt = 0;
   // Mobile tab switcher (preview vs chat, hidden on md+ screens)
   let mobileTab: 'preview' | 'chat' = 'preview';
+  // Completion notification banner — shown instead of force-switching tab on mobile
+  let completionBanner = false;
   // Rotating tip shown in the provisioning overlay to break the silence during long VM boots.
   let provisioningTipIndex = 0;
   let provisioningTipInterval: ReturnType<typeof setInterval>;
   const PROVISIONING_TIPS = [
-    'Usually ready in 5–15 minutes.',
     'Claude will start building as soon as your project is ready.',
-    'You can close this tab — we\'ll keep working in the background.',
+    'You can close this tab and come back — we\'ll keep going.',
     'Your project URL is saved. Come back any time.',
-    'We\'ll keep your project going even if you close this tab.',
+    'No downloads or installs needed — everything runs in the cloud.',
+    'Your app will have its own web address you can share.',
+  ];
+
+  // Patience messages shown in the slim activity bar while Claude builds.
+  // Defined at module scope so the template can reference STALE_MESSAGES.length.
+  // After these are exhausted, POST_STALE_MESSAGES cycles to prevent a frozen bar.
+  const STALE_MESSAGES = [
+    '⚙ Claude is reading your request and planning the app…',
+    '⚙ Writing the code — this takes a few minutes for first builds',
+    '⚙ Still working — you can close this tab and come back later',
+    '⚙ Building in the background — complex apps can take 5–10 minutes',
+    '⚙ Still building — the final steps are hard to predict…',
+  ];
+  // Cycles after STALE_MESSAGES are exhausted — honest, permission to close tab
+  const POST_STALE_MESSAGES = [
+    '⚙ Still building — you can close this tab and come back later…',
+    '⚙ Still working — the URL will be ready when you return…',
+    '⚙ Taking longer than expected — we\'ll keep going in the background…',
   ];
 
   // State machine
@@ -147,6 +166,7 @@
     clearInterval(waitElapsedInterval);
     clearInterval(staleActivityInterval);
     eventSource?.close();
+    historyEventSource?.close();
   });
 
   async function pollWorkspace() {
@@ -198,6 +218,9 @@
           pendingPrompt = null;
           pendingPromptIsSpecGoal = false;
           phase = 'idle';
+          isReady = true;
+          // Load historical activity from SSE replay buffer so Chat tab isn't empty
+          loadStreamHistory();
         } else if (pendingPrompt && !pendingPromptIsSpecGoal) {
           // A follow-up goal was posted via handlePrompt before the VM became ready
           phase = 'posting_goal';
@@ -206,6 +229,11 @@
           // Waiting for the controller to pick up spec.goal, or truly idle
           if (pendingPromptIsSpecGoal && specGoalWaitStartedAt === 0) {
             specGoalWaitStartedAt = Date.now(); // start the timeout clock
+          }
+          // If goals are done and we have no active goal, load history
+          if (goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
+            isReady = true;
+            loadStreamHistory();
           }
           phase = 'idle';
         }
@@ -298,6 +326,8 @@
         clearInterval(elapsedInterval);
         clearInterval(staleActivityInterval);
         staleMessageIds.clear();
+        // On mobile, show a completion banner instead of force-switching tabs
+        if (typeof window !== 'undefined' && window.innerWidth < 768 && mobileTab !== 'chat') completionBanner = true;
       }
     } catch { /* worker may not be ready yet */ }
   }
@@ -436,21 +466,12 @@
       if (!shouldFire) return;
 
       staleActivityCount += 1;
-      const staleMessages = [
-        '⚙ Claude is reading your request and planning the app…',
-        '⚙ Writing the code — this takes a few minutes for first builds',
-        '⚙ Still working — you can close this tab and come back later',
-        '⚙ Building in the background — complex apps can take 5–10 minutes',
-        '⚙ Hang tight, this one is taking a while…',
-      ];
       const newId = String(Date.now());
       const idx = staleActivityCount - 1;
-      if (idx >= staleMessages.length) {
-        // All initial stale messages shown — stop adding more
-        // The footer "Claude is coding in the background…" handles ongoing state
-        return;
-      }
-      const newText = staleMessages[idx];
+      // After STALE_MESSAGES exhausted, cycle POST_STALE_MESSAGES so the bar never freezes
+      const newText = idx < STALE_MESSAGES.length
+        ? STALE_MESSAGES[idx]
+        : POST_STALE_MESSAGES[(idx - STALE_MESSAGES.length) % POST_STALE_MESSAGES.length];
       const newItem = {
         id: newId,
         kind: 'hook' as const,
@@ -478,6 +499,8 @@
           clearInterval(staleActivityInterval);
           staleMessageIds.clear();
           loadGoals();
+          // On mobile, show a completion banner instead of force-switching tabs
+          if (typeof window !== 'undefined' && window.innerWidth < 768 && mobileTab !== 'chat') completionBanner = true;
         }
       }
     };
@@ -495,6 +518,44 @@
     // Poll goal statuses every 2s while streaming as a fallback
     // (catches cases where [DONE] event is missed or SSE connection is unreliable)
     goalPollInterval = setInterval(loadGoals, GOAL_POLL_MS);
+  }
+
+  // Separate EventSource for history loading — tracked so onDestroy can close it.
+  let historyEventSource: EventSource | null = null;
+
+  // Load historical activity from SSE replay buffer without entering 'streaming' phase.
+  // Used when the page loads and the goal is already completed — gives the Chat tab
+  // a meaningful history instead of showing nothing. Also auto-switches mobile tab to Chat.
+  function loadStreamHistory() {
+    if (eventSource || historyEventSource) return; // already connected
+    // Use a separate dedup map for history so it doesn't poison the live-stream dedup map.
+    const historyDedup = new Map<string, number>();
+    const es = createEventSource(workspaceName);
+    historyEventSource = es;
+    const timeout = setTimeout(() => { es.close(); historyEventSource = null; }, 6_000);
+    function onEvent(e: MessageEvent) {
+      const item = parseEventToActivity(e);
+      if (item) {
+        const dedupKey = item.text.startsWith('+ ') || item.text.startsWith('~ ')
+          ? item.text.slice(2) : item.text;
+        const now = Date.now();
+        const lastSeen = historyDedup.get(dedupKey);
+        if (!lastSeen || now - lastSeen >= ACTIVITY_DEDUP_MS) {
+          historyDedup.set(dedupKey, now);
+          activity = [...activity, item].slice(-10);
+        }
+        if (item.kind === 'done' || item.kind === 'failed') {
+          clearTimeout(timeout);
+          es.close();
+          historyEventSource = null;
+          // Auto-switch to Chat tab on mobile so result is visible immediately
+          if (typeof window !== 'undefined' && window.innerWidth < 768) mobileTab = 'chat';
+        }
+      }
+    }
+    es.onmessage = onEvent;
+    es.addEventListener('hook', (e) => onEvent(e as MessageEvent));
+    es.onerror = () => { clearTimeout(timeout); es.close(); historyEventSource = null; };
   }
 
   async function cancelWorkspace() {
@@ -523,6 +584,7 @@
     staleMessageId = null;
     staleMessageIds.clear();
     schedulingFailed = false;
+    completionBanner = false;
     pendingPrompt = prompt;
     pendingPromptIsSpecGoal = false; // user-entered follow-up goal — must call addGoal()
     await postGoalWithRetry(prompt);
@@ -543,6 +605,7 @@
       lastStaleAt = 0;
       staleActivityCount = 0;
       staleMessageId = null;
+      completionBanner = false;
       staleMessageIds.clear();
       schedulingFailed = false;
       phase = 'confirming_goal';
@@ -556,6 +619,12 @@
   // Don't surface 'Error' badge on timeout alone — that's a transient delay, not a failure
   $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Getting Ready' : 'Unknown');
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
+  // Extract deployed URL from goal result for the persistent live URL bar
+  $: liveUrl = (() => {
+    const result = goals.find(g => g.result)?.result || '';
+    return result.match(/https?:\/\/[\w.-]+\.[a-z]{2,}(?:\/\S*)?/)?.[0]?.replace(/[.,;:!?)'"\s]+$/, '') || null;
+  })();
+  $: liveDomain = liveUrl ? liveUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : null;
   // Provisioning timeout states — shown when VM takes longer than expected
   $: provisioningOverdue = isProvisioning && waitElapsedSeconds >= 300;  // > 5 min
   $: provisioningFailed = isProvisioning && waitElapsedSeconds >= 660;   // > 11 min
@@ -677,7 +746,21 @@
         {:else}
           <div class="text-center">
             <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Getting your project ready</p>
-            <p style="font-size: 13px; color: var(--color-text-muted);">{PROVISIONING_TIPS[provisioningTipIndex]}</p>
+            <!-- Show specific VM phase so the user knows something is happening -->
+            <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">
+              {#if !workspace?.vmStatus || workspace.vmStatus === 'Scheduling'}
+                Setting up your project — this takes a moment…
+              {:else if workspace.vmStatus === 'Booting' || workspace.vmStatus === 'Starting'}
+                Starting up your project…
+              {:else}
+                All set — connecting to your project…
+              {/if}
+            </p>
+            <!-- Rotating tip for reassurance during all provisioning phases -->
+            <p style="font-size: 12px; color: var(--color-text-muted); opacity: 0.7; margin-bottom: 4px;">
+              {PROVISIONING_TIPS[provisioningTipIndex]}
+            </p>
+            <p style="font-size: 11px; color: var(--color-text-muted); opacity: 0.6; font-family: var(--font-mono);">Usually ready in 10–20 minutes</p>
           </div>
         {/if}
         {#if pendingPrompt}
@@ -721,6 +804,85 @@
 
   <!-- Mobile tab bar (hidden on md+) -->
   {#if !isProvisioning}
+    <!-- Completion notification banner — appears above tab bar when build finishes -->
+    {#if completionBanner}
+      <div
+        class="md:hidden fixed left-0 right-0 flex items-center justify-between gap-3 px-4"
+        style="
+          bottom: 48px; z-index: 20;
+          background: rgba(34,197,94,0.12);
+          border-top: 1px solid rgba(34,197,94,0.25);
+          border-bottom: 1px solid rgba(34,197,94,0.25);
+          padding-top: 10px; padding-bottom: 10px;
+        "
+      >
+        <span style="font-size: 13px; color: #4ade80; font-weight: 500;">✓ Your app is ready!</span>
+        <div style="display: flex; gap: 8px;">
+          <button
+            on:click={() => { completionBanner = false; mobileTab = 'chat'; }}
+            style="
+              font-size: 11px; font-family: var(--font-mono);
+              color: #4ade80; background: rgba(34,197,94,0.15);
+              border: 1px solid rgba(34,197,94,0.3); border-radius: 5px;
+              padding: 4px 10px; cursor: pointer;
+            "
+          >See what Claude built</button>
+          <button
+            on:click={() => completionBanner = false}
+            style="
+              font-size: 11px; font-family: var(--font-mono);
+              color: var(--color-text-muted); background: transparent;
+              border: none; padding: 4px 6px; cursor: pointer;
+            "
+          >✕</button>
+        </div>
+      </div>
+    {/if}
+    <!-- Persistent live URL bar — shown after completion banner dismissed, stays until navigation -->
+    {#if isReady && liveUrl && !completionBanner && !isWorking}
+      <div
+        class="md:hidden fixed left-0 right-0 flex items-center gap-2 px-3"
+        style="
+          bottom: 48px; z-index: 19;
+          background: rgba(15, 15, 20, 0.95);
+          border-top: 1px solid rgba(34,197,94,0.2);
+          padding-top: 7px; padding-bottom: 7px;
+        "
+      >
+        <span style="color: #4ade80; font-size: 11px; flex-shrink: 0;">✓ Live:</span>
+        <a
+          href={liveUrl} target="_blank" rel="noopener noreferrer"
+          style="font-size: 11px; color: var(--color-accent); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;"
+        >{liveDomain}</a>
+        <button
+          on:click={() => { if (typeof navigator !== 'undefined') navigator.clipboard.writeText(liveUrl || ''); }}
+          style="font-size: 10px; font-family: var(--font-mono); color: var(--color-text-muted); background: transparent; border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 6px; cursor: pointer; flex-shrink: 0;"
+        >Copy</button>
+      </div>
+    {/if}
+    <!-- Mobile activity bar on Preview tab — shows latest Claude status while building -->
+    {#if mobileTab === 'preview' && isWorking && !completionBanner && activity.length > 0}
+      <div
+        class="md:hidden fixed left-0 right-0 flex items-center gap-2 px-3"
+        style="
+          bottom: 48px; z-index: 19;
+          background: rgba(15, 15, 20, 0.92);
+          border-top: 1px solid var(--color-border);
+          padding-top: 8px; padding-bottom: 8px;
+          backdrop-filter: blur(4px);
+        "
+      >
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); display: inline-block; flex-shrink: 0; animation: pulse 1.5s ease infinite;"></span>
+        <span style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
+          {activity[activity.length - 1].text}
+        </span>
+        {#if staleActivityCount > 0 && staleActivityCount <= STALE_MESSAGES.length}
+          <span style="font-size: 10px; color: var(--color-text-muted); font-family: var(--font-mono); opacity: 0.5; flex-shrink: 0; padding-left: 6px;">
+            {staleActivityCount}/{STALE_MESSAGES.length}
+          </span>
+        {/if}
+      </div>
+    {/if}
     <div class="md:hidden fixed bottom-0 left-0 right-0 flex border-t" style="background: var(--color-surface); border-color: var(--color-border); z-index: 10;">
       <button
         on:click={() => mobileTab = 'preview'}
@@ -728,10 +890,19 @@
         style="color: {mobileTab === 'preview' ? 'var(--color-accent)' : 'var(--color-text-muted)'};"
       >Preview</button>
       <button
-        on:click={() => mobileTab = 'chat'}
-        class="flex-1 py-3 text-sm font-medium"
+        on:click={() => { mobileTab = 'chat'; completionBanner = false; }}
+        class="flex-1 py-3 text-sm font-medium relative"
         style="color: {mobileTab === 'chat' ? 'var(--color-accent)' : 'var(--color-text-muted)'};"
-      >Chat</button>
+      >
+        Chat
+        {#if completionBanner}
+          <span style="
+            position: absolute; top: 8px; right: calc(50% - 22px);
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #4ade80; display: inline-block;
+          "></span>
+        {/if}
+      </button>
     </div>
   {/if}
 </div>

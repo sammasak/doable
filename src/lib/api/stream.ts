@@ -48,7 +48,7 @@ function translateToolUse(name: string, input: Record<string, unknown>): string 
     if (cmd.includes('git push')) return 'Pushing code…';
     if (cmd.includes('git clone') || cmd.includes('gh repo clone')) return 'Cloning repository…';
     if (cmd.includes('nix develop') || cmd.includes('nix run')) return 'Setting up build environment…';
-    if (cmd.includes('curl') && cmd.includes('health')) return 'Verifying deployment…';
+    if (cmd.includes('curl')) return 'Testing your app…';
     // Don't show generic bash commands
     return null;
   }
