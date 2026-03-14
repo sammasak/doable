@@ -7,6 +7,7 @@ export interface Workspace {
   createdAt?: string;
   previewUrl?: string;
   goal?: string;
+  repoUrl?: string;
   goalPosted?: boolean;
   goalPostingError?: string;
 }
@@ -29,6 +30,7 @@ export interface CreateWorkspaceRequest {
   runStrategy: string;
   idleHaltAfterMinutes: number;
   goal?: string;
+  repoUrl?: string;
 }
 
 // All calls go to /api/proxy/* which SvelteKit server routes forward to workstation-api
