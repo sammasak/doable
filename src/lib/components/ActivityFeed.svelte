@@ -52,7 +52,7 @@
         line-height: 1.7;
         padding: 1px 0 1px 8px;
         margin-bottom: 1px;
-        word-break: break-all;
+        word-break: break-word;
         white-space: pre-wrap;
         border-left: 2px solid {style.borderColor};
         color: {style.color};

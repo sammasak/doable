@@ -329,6 +329,9 @@
           <span style="padding-right: 12px; font-size: 11px; color: #F87171; font-family: var(--font-mono); white-space: nowrap;">{nameError}</span>
         {/if}
       </div>
+      {#if !nameError}
+        <p style="font-size: 12px; color: var(--color-text-muted); margin: 4px 16px 0; line-height: 1.4;">Lowercase letters and hyphens only, e.g. my-project</p>
+      {/if}
 
       <!-- Prompt textarea -->
       <div style="border-bottom: 1px solid {promptError ? 'rgba(248,113,113,0.6)' : 'transparent'}; transition: border-color 0.15s;">

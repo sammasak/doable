@@ -78,7 +78,7 @@
   let provisioningTipIndex = 0;
   let provisioningTipInterval: ReturnType<typeof setInterval>;
   const PROVISIONING_TIPS = [
-    'Usually ready in under a minute — sometimes a little longer on busy days.',
+    'Usually ready in 1–3 minutes — sometimes longer on busy days.',
     'Claude will start building as soon as your project is ready.',
     'You can close this tab — we\'ll keep working in the background.',
     'Your project URL is saved. Come back any time.',
