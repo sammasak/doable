@@ -97,7 +97,7 @@
         containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
         bootstrapSecretName: 'claude-worker-bootstrap',
         runStrategy: 'Always',
-        idleHaltAfterMinutes: 60,
+        idleHaltAfterMinutes: 30,
         goal: prompt.trim() || undefined,
       });
       goto(`/projects/${name}`);
@@ -144,7 +144,7 @@
         containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
         bootstrapSecretName: 'claude-worker-bootstrap',
         runStrategy: 'Always',
-        idleHaltAfterMinutes: 60,
+        idleHaltAfterMinutes: 30,
         goal: prompt.trim(),
         repoUrl: importRepoUrl.trim(),
       });

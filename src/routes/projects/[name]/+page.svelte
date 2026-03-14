@@ -17,6 +17,7 @@
   let goals: Goal[] = [];
   let activity: ActivityItem[] = [];
   let events: unknown[] = [];
+  let schedulingFailed = false;
   let isProvisioning = true;
   let isReady = false;
   let error = '';
@@ -240,6 +241,14 @@
         // Show K8s events during boot
         try {
           events = await getWorkspaceEvents(workspaceName);
+          const hasSchedulingFailure = events.some((e: unknown) => {
+            const ev = e as Record<string, unknown>;
+            return (ev.reason as string)?.includes('FailedScheduling') ||
+                   (ev.reason as string)?.includes('Unschedulable');
+          });
+          if (hasSchedulingFailure && !schedulingFailed) {
+            schedulingFailed = true;
+          }
         } catch { /* ignore */ }
       }
     } catch (e) {
@@ -499,6 +508,7 @@
     staleActivityCount = 0; // reset cap for new goal session
     staleMessageId = null;
     staleMessageIds.clear();
+    schedulingFailed = false;
     pendingPrompt = prompt;
     pendingPromptIsSpecGoal = false; // user-entered follow-up goal — must call addGoal()
     await postGoalWithRetry(prompt);
@@ -639,6 +649,11 @@
           <div class="text-center">
             <p style="font-size: 15px; font-weight: 600; color: #F87171; margin-bottom: 6px; letter-spacing: -0.02em;">We're having trouble finding a machine</p>
             <p style="font-size: 13px; color: var(--color-text-muted);">Your request is saved — give it a moment and try again.</p>
+          </div>
+        {:else if schedulingFailed}
+          <div class="text-center">
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Our machines are a little busy right now</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">Finding one for you — your request is saved. This usually resolves in a minute or two.</p>
           </div>
         {:else if provisioningOverdue}
           <div class="text-center">
