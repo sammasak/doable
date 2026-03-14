@@ -31,11 +31,13 @@
     if (!iframeEl) return;
     try {
       const title = iframeEl.contentDocument?.title ?? '';
-      const isTemplate = title === 'Vite App' || title === 'Vite + TS' || title === '' || title === 'Vite + SvelteKit';
+      const isTemplate = title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
       if (isTemplate && isWorking) {
         if (hasSeenRealContent) {
           // Regression: real content was visible but Vite reloaded back to the template
           showShimmer = true;
+          // Failsafe: auto-clear after 8s in case iframe doesn't reload with real content
+          setTimeout(() => { showShimmer = false; }, 8_000);
         }
         // If we haven't seen real content yet, just leave the iframe visible (first load of template is expected)
       } else if (!isTemplate) {
@@ -46,11 +48,6 @@
     } catch {
       // Cross-origin error — can't inspect, leave as-is
     }
-  }
-
-  // Hide shimmer when Claude finishes building (isWorking goes false)
-  $: if (!isWorking) {
-    showShimmer = false;
   }
 
   // Proxy URL — always relative, same origin
