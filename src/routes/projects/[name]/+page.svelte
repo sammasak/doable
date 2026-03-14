@@ -246,8 +246,10 @@
             return (ev.reason as string)?.includes('FailedScheduling') ||
                    (ev.reason as string)?.includes('Unschedulable');
           });
-          if (hasSchedulingFailure && !schedulingFailed) {
+          if (hasSchedulingFailure) {
             schedulingFailed = true;
+          } else if (schedulingFailed) {
+            schedulingFailed = false; // transient event resolved — VM may be booting now
           }
         } catch { /* ignore */ }
       }
@@ -529,6 +531,7 @@
       staleActivityCount = 0;
       staleMessageId = null;
       staleMessageIds.clear();
+      schedulingFailed = false;
       phase = 'confirming_goal';
       startConfirmation(goal.id);
     } catch (e) {
@@ -650,7 +653,7 @@
             <p style="font-size: 15px; font-weight: 600; color: #F87171; margin-bottom: 6px; letter-spacing: -0.02em;">We're having trouble finding a machine</p>
             <p style="font-size: 13px; color: var(--color-text-muted);">Your request is saved — give it a moment and try again.</p>
           </div>
-        {:else if schedulingFailed}
+        {:else if schedulingFailed && !provisioningOverdue}
           <div class="text-center">
             <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Our machines are a little busy right now</p>
             <p style="font-size: 13px; color: var(--color-text-muted);">Finding one for you — your request is saved. This usually resolves in a minute or two.</p>
