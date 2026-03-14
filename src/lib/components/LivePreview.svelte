@@ -198,8 +198,8 @@
           top: 0; left: 0; right: 0;
           padding: 6px 12px;
           font-size: 12px;
-          background: rgba(var(--color-accent-rgb, 99, 102, 241), 0.08);
-          border-bottom: 1px solid rgba(var(--color-accent-rgb, 99, 102, 241), 0.15);
+          background: rgba(99, 102, 241, 0.08);
+          border-bottom: 1px solid rgba(99, 102, 241, 0.15);
           color: var(--color-text-muted);
           z-index: 5;
           display: flex;
