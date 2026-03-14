@@ -20,12 +20,16 @@
 
   $: renderedGoal = marked.parse(goal.goal, { breaks: true }) as string;
 
-  // Extract the first URL from result text for the share button
-  // Strip trailing punctuation that may be captured by the URL regex
+  // Extract the deployed URL from result text for the share button.
+  // Prefer *.sammasak.dev URLs; fall back to the first https:// URL found.
+  // Strip trailing punctuation that may be captured by the URL regex.
   $: deployedUrl = (() => {
     if (!goal.result) return null;
-    const m = goal.result.match(/https?:\/\/[^\s,]+/);
-    return m ? m[0].replace(/[.,;:!?)'"]+$/, '') : null;
+    const strip = (u: string) => u.replace(/[.,;:!?)'"]+$/, '');
+    const sammasak = goal.result.match(/https?:\/\/[\w-]+\.sammasak\.dev[\w/.-]*/);
+    if (sammasak) return strip(sammasak[0]);
+    const first = goal.result.match(/https?:\/\/[^\s,]+/);
+    return first ? strip(first[0]) : null;
   })();
 
   let copied = false;
