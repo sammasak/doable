@@ -38,7 +38,8 @@
     if (!iframeEl) return;
     try {
       const title = iframeEl.contentDocument?.title ?? '';
-      const isTemplate = title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
+      // Treat empty title (our baked template has no <title> tag) or known Vite defaults as template state
+      const isTemplate = !title || title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
       if (isTemplate && isWorking) {
         if (hasSeenRealContent) {
           // Regression: real content was visible but Vite reloaded back to the template
