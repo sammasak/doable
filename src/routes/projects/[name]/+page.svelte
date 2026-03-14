@@ -721,7 +721,7 @@
       </div>
     {:else}
       <!-- Left: Chat sidebar (320px, hidden on mobile unless chat tab active) -->
-      <div class="{mobileTab === 'chat' ? 'flex w-full' : 'hidden'} md:flex md:w-80 shrink-0 flex-col overflow-hidden">
+      <div class="{mobileTab === 'chat' ? 'flex w-full' : 'hidden'} md:flex md:w-80 md:shrink-0 flex-col overflow-hidden">
         <ChatSidebar
           {goals}
           {activity}
