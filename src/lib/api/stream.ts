@@ -20,11 +20,11 @@ type GoalLifecycleEvent =
 function formatGoalLifecycle(hook: GoalLifecycleEvent): { text: string; color: string } | null {
   switch (hook.type) {
     case 'goal_loop':
-      return { text: `↻ ${hook.pending ?? 0} pending goals`, color: 'text-yellow-400' };
+      return { text: `Working on your project…`, color: 'text-yellow-400' };
     case 'review_start':
-      return { text: `◎ reviewing ${hook.count} goals…`, color: 'text-purple-400' };
+      return { text: `Reviewing your app…`, color: 'text-purple-400' };
     case 'session_end':
-      return { text: '✓ done', color: 'text-green-400' };
+      return { text: '✓ Done', color: 'text-green-400' };
     default:
       return null;
   }
@@ -43,8 +43,8 @@ function translateToolUse(name: string, input: Record<string, unknown>): string 
     const cmd = ((input?.command || '') as string).trim().split('\n')[0].slice(0, 80);
     if (cmd.includes('pip install') || cmd.includes('uv install')) return 'Installing dependencies…';
     if (cmd.includes('buildah build')) return 'Building container image…';
-    if (cmd.includes('buildah push')) return 'Uploading image to registry…';
-    if (cmd.includes('kubectl') || cmd.includes('flux reconcile')) return 'Deploying to Kubernetes…';
+    if (cmd.includes('buildah push')) return 'Uploading your app…';
+    if (cmd.includes('kubectl') || cmd.includes('flux reconcile')) return 'Publishing your app…';
     if (cmd.includes('git push')) return 'Pushing code…';
     if (cmd.includes('git clone') || cmd.includes('gh repo clone')) return 'Cloning repository…';
     if (cmd.includes('nix develop') || cmd.includes('nix run')) return 'Setting up build environment…';
@@ -63,7 +63,7 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
 
   // Terminal signals from process exit
   if (data === '[DONE]') {
-    return { id: nextId(), kind: 'done', text: '✓ Session complete', timestamp: new Date(), color: 'text-green-400' };
+    return { id: nextId(), kind: 'done', text: '✓ Done', timestamp: new Date(), color: 'text-green-400' };
   }
   if (data.startsWith('[FAILED:')) {
     return { id: nextId(), kind: 'failed', text: '✗ Something went wrong', timestamp: new Date(), color: 'text-red-400' };

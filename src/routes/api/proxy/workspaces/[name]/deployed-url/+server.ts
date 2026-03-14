@@ -46,6 +46,29 @@ export const GET: RequestHandler = async ({ params }) => {
     });
   }
 
+  // Last resort: parse deployed URL from goal result text
+  // Claude always mentions the deployed URL in its goal result summary
+  if (ip) {
+    try {
+      const goalsRes = await fetch(`http://${ip}:4200/goals`, {
+        signal: AbortSignal.timeout(2000)
+      });
+      if (goalsRes.ok) {
+        const goals = await goalsRes.json() as Array<{ status: string; result?: string }>;
+        for (const g of [...goals].reverse()) {
+          if (g.result) {
+            const match = g.result.match(/https?:\/\/[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/i);
+            if (match && !match[0].includes('localhost') && !match[0].includes('10.42.')) {
+              return new Response(JSON.stringify({ url: match[0] }), {
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   return new Response(JSON.stringify({ url: null }), {
     headers: { 'Content-Type': 'application/json' }
   });

@@ -47,6 +47,7 @@
   const GOAL_POLL_MS = 2_000;       // fallback goal status poll during streaming
   const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
   const STALE_ACTIVITY_MS = 40_000;  // inject a patience message after this much silence
+  const STALE_SUBSEQUENT_MS = 25_000; // interval between subsequent stale messages
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
   const SPEC_GOAL_TIMEOUT_MS = 120_000;   // 2 min: give up waiting for controller to post spec goal
 
@@ -72,6 +73,9 @@
   let staleMessageId: string | null = null;
   // Tracks ALL stale message IDs so they can be purged when the goal completes.
   const staleMessageIds = new Set<string>();
+  // Timestamp of the last stale message injection — used to space subsequent stale messages
+  // at STALE_SUBSEQUENT_MS rather than re-waiting the full STALE_ACTIVITY_MS threshold.
+  let lastStaleAt = 0;
   // Mobile tab switcher (preview vs chat, hidden on md+ screens)
   let mobileTab: 'preview' | 'chat' = 'preview';
   // Rotating tip shown in the provisioning overlay to break the silence during long VM boots.
@@ -418,44 +422,51 @@
     }
 
     // Inject a patience message if no real activity appears for STALE_ACTIVITY_MS.
-    // Replaces the previous stale message rather than stacking — avoids spam appearance.
-    // Capped at 6 repetitions across ALL reconnects (staleActivityCount is module-level).
-    // staleMessageId is also module-level so it survives multiple connectStream() calls.
+    // The FIRST stale message fires after STALE_ACTIVITY_MS of silence.
+    // Subsequent stale messages fire every STALE_SUBSEQUENT_MS (25s) — faster reassurance.
+    // staleActivityCount and staleMessageId are module-level so they survive reconnects.
     staleActivityInterval = setInterval(() => {
-      if (phase === 'streaming' && Date.now() - lastRealActivityAt >= STALE_ACTIVITY_MS) {
-        staleActivityCount += 1;
-        const staleMessages = [
-          '⚙ Claude is reading your request and planning the app…',
-          '⚙ Writing the code — this takes a few minutes for first builds',
-          '⚙ Still working — you can close this tab and come back later',
-          '⚙ Building in the background…',
-          '⚙ Almost there — packaging the final pieces…',
-        ];
-        // After the initial messages, cycle calmly so the feed never looks frozen
-        const extendedMessages = [
-          '⚙ Still building — this can take a while for complex apps',
-          '⚙ Working away in the background…',
-          '⚙ Your app will be ready soon — feel free to close this tab',
-        ];
-        const newId = String(Date.now());
-        const idx = staleActivityCount - 1;
-        const newText = idx < staleMessages.length
-          ? staleMessages[idx]
-          : extendedMessages[(idx - staleMessages.length) % extendedMessages.length];
-        const newItem = {
-          id: newId,
-          kind: 'hook' as const,
-          text: newText,
-          timestamp: new Date(),
-          color: 'text-yellow-400',
-        };
-        // Accumulate stale messages (don't replace old ones) — gives a
-        // growing history so the feed never looks frozen. Cap at 10 total.
-        activity = [...activity, newItem].slice(-10);
-        staleMessageId = newId;
-        staleMessageIds.add(newId);
-        lastRealActivityAt = Date.now(); // reset so the next message waits another STALE_ACTIVITY_MS
-      }
+      if (phase !== 'streaming') return;
+      const now = Date.now();
+      const silenceDuration = now - lastRealActivityAt;
+      const isFirstStale = lastStaleAt === 0;
+      const shouldFire = isFirstStale
+        ? silenceDuration >= STALE_ACTIVITY_MS
+        : now - lastStaleAt >= STALE_SUBSEQUENT_MS;
+      if (!shouldFire) return;
+
+      staleActivityCount += 1;
+      const staleMessages = [
+        '⚙ Claude is reading your request and planning the app…',
+        '⚙ Writing the code — this takes a few minutes for first builds',
+        '⚙ Still working — you can close this tab and come back later',
+        '⚙ Building in the background…',
+        '⚙ Almost there — packaging the final pieces…',
+      ];
+      // After the initial messages, cycle calmly so the feed never looks frozen
+      const extendedMessages = [
+        '⚙ Still building — this can take a while for complex apps',
+        '⚙ Working away in the background…',
+        '⚙ Your app will be ready soon — feel free to close this tab',
+      ];
+      const newId = String(Date.now());
+      const idx = staleActivityCount - 1;
+      const newText = idx < staleMessages.length
+        ? staleMessages[idx]
+        : extendedMessages[(idx - staleMessages.length) % extendedMessages.length];
+      const newItem = {
+        id: newId,
+        kind: 'hook' as const,
+        text: newText,
+        timestamp: new Date(),
+        color: 'text-yellow-400',
+      };
+      // Accumulate stale messages (don't replace old ones) — gives a
+      // growing history so the feed never looks frozen. Cap at 10 total.
+      activity = [...activity, newItem].slice(-10);
+      staleMessageId = newId;
+      staleMessageIds.add(newId);
+      lastStaleAt = now; // track when the last stale message was injected
     }, 10_000);
 
     eventSource.onmessage = (e) => {
@@ -510,6 +521,7 @@
     recentActivityTexts.clear();
     clearInterval(staleActivityInterval);
     lastRealActivityAt = 0;
+    lastStaleAt = 0;
     staleActivityCount = 0; // reset cap for new goal session
     staleMessageId = null;
     staleMessageIds.clear();
@@ -531,6 +543,7 @@
       recentActivityTexts.clear();
       clearInterval(staleActivityInterval);
       lastRealActivityAt = 0;
+      lastStaleAt = 0;
       staleActivityCount = 0;
       staleMessageId = null;
       staleMessageIds.clear();

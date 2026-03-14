@@ -53,7 +53,7 @@
       <!-- Animated working indicator -->
       <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0;">
         <div style="display: flex; align-items: center; gap: 5px;">
-          <span style="font-size: 10px; color: #F59E0B; font-family: var(--font-mono);">working</span>
+          <span style="font-size: 10px; color: #F59E0B; font-family: var(--font-mono);">Working…</span>
           <div style="display: flex; gap: 2px; align-items: center;">
             <span class="thinking-dot" style="--delay: 0ms;"></span>
             <span class="thinking-dot" style="--delay: 160ms;"></span>
@@ -90,7 +90,7 @@
           <span class="thinking-dot" style="--delay: 160ms;"></span>
           <span class="thinking-dot" style="--delay: 320ms;"></span>
         </div>
-        <p style="font-size: 12px; color: var(--color-text-muted); line-height: 1.5;">Submitting your goal to Claude…</p>
+        <p style="font-size: 12px; color: var(--color-text-muted); line-height: 1.5;">Sending your request to Claude…</p>
         <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15); border-radius: 8px; padding: 10px 14px; max-width: 260px; text-align: left;">
           <p style="font-size: 11px; color: var(--color-text-secondary); line-height: 1.5; font-family: var(--font-mono);">{pendingGoal.slice(0, 140)}{pendingGoal.length > 140 ? '…' : ''}</p>
         </div>
@@ -111,9 +111,8 @@
               <span class="thinking-dot" style="--delay: 0ms;"></span>
               <span class="thinking-dot" style="--delay: 160ms;"></span>
               <span class="thinking-dot" style="--delay: 320ms;"></span>
-              <span style="margin-left: 2px;">Building your app — first builds take 5-15 minutes</span>
+              <span style="margin-left: 2px;">Claude is coding in the background…</span>
             </div>
-            <span style="padding-left: 20px; opacity: 0.6; font-size: 9px;">First builds take longest while getting everything ready</span>
           </div>
         {/if}
       </div>

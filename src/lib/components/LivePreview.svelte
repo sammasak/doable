@@ -15,9 +15,42 @@
   let key = 0;
   let deployedUrl: string | null = null;
   let prevIsDeploying = false;
+  // Shimmer state: shown when iframe regresses to the raw Vite template while Claude is still building
+  let showShimmer = false;
+  let hasSeenRealContent = false;
+  let iframeEl: HTMLIFrameElement | null = null;
 
   function reload() {
     key += 1;
+    // Reset shimmer / real-content tracking on manual reload
+    showShimmer = false;
+    hasSeenRealContent = false;
+  }
+
+  function onIframeLoad() {
+    if (!iframeEl) return;
+    try {
+      const title = iframeEl.contentDocument?.title ?? '';
+      const isTemplate = title === 'Vite App' || title === 'Vite + TS' || title === '' || title === 'Vite + SvelteKit';
+      if (isTemplate && isWorking) {
+        if (hasSeenRealContent) {
+          // Regression: real content was visible but Vite reloaded back to the template
+          showShimmer = true;
+        }
+        // If we haven't seen real content yet, just leave the iframe visible (first load of template is expected)
+      } else if (!isTemplate) {
+        // Real app content loaded
+        hasSeenRealContent = true;
+        showShimmer = false;
+      }
+    } catch {
+      // Cross-origin error — can't inspect, leave as-is
+    }
+  }
+
+  // Hide shimmer when Claude finishes building (isWorking goes false)
+  $: if (!isWorking) {
+    showShimmer = false;
   }
 
   // Proxy URL — always relative, same origin
@@ -27,7 +60,7 @@
   $: addressText = deployedUrl
     ? deployedUrl.replace('https://', '')
     : previewActive
-      ? 'localhost:8080 (preview)'
+      ? 'Dev preview'
       : 'No preview';
 
   // Fetch deployed URL when workspace changes
@@ -158,8 +191,28 @@
           title="Live preview"
           class="w-full h-full border-0"
           sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          bind:this={iframeEl}
+          on:load={onIframeLoad}
         ></iframe>
       {/key}
+      {#if showShimmer}
+        <div style="
+          position: absolute; inset: 0;
+          background: var(--color-bg);
+          display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          gap: 14px;
+          z-index: 10;
+        ">
+          <div style="
+            width: 60%; max-width: 320px; height: 160px;
+            border-radius: 10px; overflow: hidden;
+            background: var(--color-surface);
+            animation: shimmerPulse 1.8s ease-in-out infinite;
+          "></div>
+          <p style="font-size: 13px; color: var(--color-text-muted); font-family: var(--font-mono);">Claude is updating the preview…</p>
+        </div>
+      {/if}
     {:else}
       <div class="flex flex-col items-center justify-center h-full gap-5" style="padding: 32px;">
         <div style="
@@ -180,11 +233,11 @@
         </div>
         <div class="text-center">
           {#if isWorking}
-            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Building your app…</p>
-            <p style="font-size: 12px; color: var(--color-text-muted);">Preview will appear here when Claude starts it</p>
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Getting preview ready…</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Usually appears within 3–5 minutes</p>
           {:else}
             <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">No preview yet</p>
-            <p style="font-size: 12px; color: var(--color-text-muted);">Your app will appear here once Claude starts it</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Your app will appear here once it's ready</p>
           {/if}
         </div>
       </div>
@@ -205,5 +258,9 @@
   }
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+  @keyframes shimmerPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
   }
 </style>
