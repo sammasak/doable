@@ -79,6 +79,23 @@
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
+  <!-- Building banner — shown whenever Claude is working and no real app content has loaded yet -->
+  {#if isWorking && !hasSeenRealContent}
+    <div style="
+      padding: 6px 12px;
+      font-size: 12px;
+      background: rgba(99, 102, 241, 0.08);
+      border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+      color: var(--color-text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    ">
+      <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-accent, #6366f1); animation: buildingPulse 1.5s ease-in-out infinite;"></span>
+      Claude is building your preview…
+    </div>
+  {/if}
   <!-- Browser chrome bar -->
   <div style="
     display: flex;
@@ -192,7 +209,8 @@
           on:load={onIframeLoad}
         ></iframe>
       {/key}
-      {#if isWorking && !hasSeenRealContent}
+      {#if isWorking && !hasSeenRealContent && previewActive}
+        <!-- Inline overlay for when iframe shows the raw Vite template (real content not yet detected) -->
         <div style="
           position: absolute;
           top: 0; left: 0; right: 0;
