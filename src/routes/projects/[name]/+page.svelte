@@ -16,7 +16,6 @@
   let workspace: Workspace | null = data.workspace;
   let goals: Goal[] = [];
   let activity: ActivityItem[] = [];
-  let events: unknown[] = [];
   let schedulingFailed = false;
   let isProvisioning = true;
   let isReady = false;
@@ -240,16 +239,21 @@
         previewActive = false;
         // Show K8s events during boot
         try {
-          events = await getWorkspaceEvents(workspaceName);
-          const hasSchedulingFailure = events.some((e: unknown) => {
+          const fetchedEvents = await getWorkspaceEvents(workspaceName);
+          const hasSchedulingFailure = fetchedEvents.some((e: unknown) => {
             const ev = e as Record<string, unknown>;
-            return (ev.reason as string)?.includes('FailedScheduling') ||
-                   (ev.reason as string)?.includes('Unschedulable');
+            return typeof ev.reason === 'string' &&
+              (ev.reason.includes('FailedScheduling') || ev.reason.includes('Unschedulable'));
           });
-          if (hasSchedulingFailure) {
+          const currentPhase = workspace?.phase ?? '';
+          const isStillScheduling = ['Scheduling', 'Pending', 'QUEUING', 'Queuing'].some(p =>
+            currentPhase.toLowerCase() === p.toLowerCase()
+          );
+          if (hasSchedulingFailure && isStillScheduling) {
             schedulingFailed = true;
-          } else if (schedulingFailed) {
-            schedulingFailed = false; // transient event resolved — VM may be booting now
+          } else if (schedulingFailed && !isStillScheduling) {
+            // VM has moved past scheduling phase — scheduling succeeded
+            schedulingFailed = false;
           }
         } catch { /* ignore */ }
       }
