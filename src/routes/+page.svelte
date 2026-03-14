@@ -5,16 +5,18 @@
   import type { Workspace } from '$lib/api/workstation';
   import ProjectList from '$lib/components/ProjectList.svelte';
 
-  let workspaces: Workspace[] = [];
-  let loading = true;
-  let error = '';
-  let creating = false;
+  let workspaces: Workspace[] = $state([]);
+  let loading = $state(true);
+  let error = $state('');
+  let creating = $state(false);
 
   // Inline creation form
-  let name = '';
-  let prompt = '';
-  let nameError = '';
+  let name = $state('');
+  let prompt = $state('');
+  let nameError = $state('');
+  let promptError = $state('');
   let nameInput: HTMLInputElement;
+  let promptInput: HTMLTextAreaElement;
   let activeTab: 'build' | 'import' = $state('build');
   let importRepoUrl = $state('');
   let importRepoUrlError = $state('');
@@ -115,9 +117,11 @@
   async function handleImport() {
     nameError = '';
     importRepoUrlError = '';
+    promptError = '';
 
-    if (!name.trim()) {
-      nameError = 'Project name is required';
+    // Fix 3: use validateName() for full validation parity with handleCreate
+    nameError = validateName(name.trim());
+    if (nameError) {
       nameInput?.focus();
       return;
     }
@@ -125,7 +129,12 @@
       importRepoUrlError = 'Must be a public GitHub URL (https://github.com/...)';
       return;
     }
-    if (!prompt.trim()) return;
+    // Fix 5: give visual feedback when prompt is empty
+    if (!prompt.trim()) {
+      promptError = 'Please describe what you want to do with this repo';
+      promptInput?.focus();
+      return;
+    }
 
     creating = true;
     error = '';
@@ -139,11 +148,13 @@
         goal: prompt.trim(),
         repoUrl: importRepoUrl.trim(),
       });
+      // Fix 4: use workspace.name from API response (consistent with handleCreate pattern)
       goto(`/projects/${workspace.name}`);
     } catch (e) {
       const msg = String(e);
       if (msg.includes('409')) {
         creating = false;
+        // Fix 4: consistent navigation — use trimmed local name on 409 (same as handleCreate uses bare name)
         goto(`/projects/${name.trim()}`);
         return;
       }
@@ -171,8 +182,8 @@
   }
 
   let canSubmit = $derived(
-    !!name && !!prompt.trim() && !nameError && !creating &&
-    (activeTab === 'build' || !!importRepoUrl.trim().startsWith('https://github.com/'))
+    !validateName(name) && !!prompt.trim() && !creating &&
+    (activeTab === 'build' || importRepoUrl.trim().startsWith('https://github.com/'))
   );
 </script>
 
@@ -317,25 +328,32 @@
       </div>
 
       <!-- Prompt textarea -->
-      <textarea
-        bind:value={prompt}
-        on:keydown={handleKeydown}
-        placeholder={activeTab === 'import' ? 'What do you want to do with this repo?\n\nTry: Add a dark mode toggle, or Fix the mobile layout...' : 'What do you want to create?\n\nTry: Make a recipe collection site, or Build a habit tracker with streaks...'}
-        rows={5}
-        style="
-          width: 100%;
-          background: transparent;
-          border: none;
-          outline: none;
-          padding: 16px;
-          font-family: var(--font-sans);
-          font-size: 14px;
-          color: var(--color-text-primary);
-          resize: none;
-          line-height: 1.6;
-          box-sizing: border-box;
-        "
-      ></textarea>
+      <div style="border-bottom: 1px solid {promptError ? 'rgba(248,113,113,0.6)' : 'transparent'}; transition: border-color 0.15s;">
+        <textarea
+          bind:value={prompt}
+          bind:this={promptInput}
+          on:keydown={handleKeydown}
+          on:input={() => { if (prompt.trim()) promptError = ''; }}
+          placeholder={activeTab === 'import' ? 'What do you want to do with this repo?\n\nTry: Add a dark mode toggle, or Fix the mobile layout...' : 'What do you want to create?\n\nTry: Make a recipe collection site, or Build a habit tracker with streaks...'}
+          rows={5}
+          style="
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 16px;
+            font-family: var(--font-sans);
+            font-size: 14px;
+            color: var(--color-text-primary);
+            resize: none;
+            line-height: 1.6;
+            box-sizing: border-box;
+          "
+        ></textarea>
+        {#if promptError}
+          <span style="display: block; padding: 0 16px 8px; font-size: 11px; color: #F87171; font-family: var(--font-mono);">{promptError}</span>
+        {/if}
+      </div>
 
       <!-- Examples + Submit row -->
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 12px; gap: 8px; flex-wrap: wrap;">
