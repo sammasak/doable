@@ -588,7 +588,7 @@
     </button>
     <span style="color: var(--color-border); font-size: 16px; line-height: 1;">/</span>
     <span style="color: var(--color-accent); font-size: 14px;">◆</span>
-    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;" class="md:max-w-xs">{workspaceName}</span>
+    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="max-w-[120px] md:max-w-xs">{workspaceName}</span>
     <WorkspaceStatus status={isWorking ? 'Building' : vmStatus} />
     {#if isWorkerWarming}
       <span class="hidden md:flex" style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); align-items: center; gap: 4px;">
