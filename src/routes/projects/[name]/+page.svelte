@@ -154,6 +154,7 @@
 
       if (running && phase === 'provisioning') {
         isProvisioning = false;
+        schedulingFailed = false;
         isReady = false; // preview might not be up yet
         clearInterval(pollInterval);
 
@@ -245,10 +246,8 @@
             return typeof ev.reason === 'string' &&
               (ev.reason.includes('FailedScheduling') || ev.reason.includes('Unschedulable'));
           });
-          const currentPhase = workspace?.phase ?? '';
-          const isStillScheduling = ['Scheduling', 'Pending', 'QUEUING', 'Queuing'].some(p =>
-            currentPhase.toLowerCase() === p.toLowerCase()
-          );
+          const lowerPhase = (workspace?.phase ?? '').toLowerCase();
+          const isStillScheduling = ['scheduling', 'pending', 'queuing'].includes(lowerPhase);
           if (hasSchedulingFailure && isStillScheduling) {
             schedulingFailed = true;
           } else if (schedulingFailed && !isStillScheduling) {
