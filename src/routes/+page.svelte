@@ -271,19 +271,19 @@
             background: {activeTab === 'import' ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)'};
             color: {activeTab === 'import' ? 'white' : 'var(--color-text-muted)'};
           "
-        >Import repo</button>
+        >Improve existing app</button>
       </div>
 
       <!-- Repo URL field (import tab only) -->
       {#if activeTab === 'import'}
         <div style="border-bottom: 1px solid {importRepoUrlError ? 'rgba(248,113,113,0.6)' : 'var(--color-border)'}; transition: border-color 0.15s; margin-top: 12px;">
           <div style="display: flex; align-items: center; gap: 0;">
-            <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">repo /</span>
+            <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">github.com/</span>
             <input
               type="url"
               bind:value={importRepoUrl}
               on:input={() => { if (importRepoUrl.trim()) importRepoUrlError = ''; }}
-              placeholder="https://github.com/you/your-repo"
+              placeholder="https://github.com/username/your-app"
               style="
                 flex: 1;
                 background: transparent;
@@ -407,7 +407,7 @@
         >
           {#if creating}
             <span style="display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin360 0.7s linear infinite;"></span>
-            Provisioning...
+            Starting…
           {:else if activeTab === 'import'}
             Import →
           {:else}

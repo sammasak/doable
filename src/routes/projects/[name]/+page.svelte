@@ -46,7 +46,7 @@
   const GOAL_RETRY_MS = 5_000;      // retry interval for posting a goal
   const GOAL_POLL_MS = 2_000;       // fallback goal status poll during streaming
   const CONFIRMATION_POLL_MS = 2_000; // poll interval while confirming goal picked up
-  const STALE_ACTIVITY_MS = 65_000;  // inject a patience message after this much silence
+  const STALE_ACTIVITY_MS = 40_000;  // inject a patience message after this much silence
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
   const SPEC_GOAL_TIMEOUT_MS = 120_000;   // 2 min: give up waiting for controller to post spec goal
 
@@ -67,6 +67,23 @@
   let waitElapsedInterval: ReturnType<typeof setInterval>;
   // Persists across stream reconnects so the cap is honoured for the full session.
   let staleActivityCount = 0;
+  // Tracks the ID of the current stale synthetic message (for reference).
+  // Module-level so it survives multiple connectStream() calls within one session.
+  let staleMessageId: string | null = null;
+  // Tracks ALL stale message IDs so they can be purged when the goal completes.
+  const staleMessageIds = new Set<string>();
+  // Mobile tab switcher (preview vs chat, hidden on md+ screens)
+  let mobileTab: 'preview' | 'chat' = 'preview';
+  // Rotating tip shown in the provisioning overlay to break the silence during long VM boots.
+  let provisioningTipIndex = 0;
+  let provisioningTipInterval: ReturnType<typeof setInterval>;
+  const PROVISIONING_TIPS = [
+    'Usually ready in under a minute — sometimes a little longer on busy days.',
+    'Claude will start building as soon as your project is ready.',
+    'You can close this tab — we\'ll keep working in the background.',
+    'Your project URL is saved. Come back any time.',
+    'We\'ll keep your project going even if you close this tab.',
+  ];
 
   // State machine
   type Phase = 'provisioning' | 'posting_goal' | 'streaming' | 'confirming_goal' | 'idle';
@@ -105,6 +122,13 @@
 
     // Heartbeat to prevent idle VM halt
     heartbeatInterval = setInterval(() => heartbeat(workspaceName), HEARTBEAT_MS);
+
+    // Rotate provisioning tips every 40s to break the silence during long VM boots
+    provisioningTipInterval = setInterval(() => {
+      if (isProvisioning) {
+        provisioningTipIndex = (provisioningTipIndex + 1) % PROVISIONING_TIPS.length;
+      }
+    }, 40_000);
   });
 
   onDestroy(() => {
@@ -114,6 +138,7 @@
     clearInterval(goalPollInterval);
     clearInterval(confirmationInterval);
     clearInterval(previewPollInterval);
+    clearInterval(provisioningTipInterval);
     clearInterval(elapsedInterval);
     clearInterval(waitElapsedInterval);
     clearInterval(staleActivityInterval);
@@ -198,7 +223,7 @@
           pendingPromptIsSpecGoal = false;
         } else if (workspace.goalPostingError && pendingPromptIsSpecGoal) {
           // Controller tried to post the spec goal but the worker rejected it.
-          error = `Couldn't deliver your goal to the workspace. ${workspace.goalPostingError.slice(0, 100)}. Click "Try again" to resubmit.`;
+          error = `Something went wrong starting your project. Type your goal below to try again.`;
           pendingPromptIsSpecGoal = false;
           pendingPrompt = null;
         } else if (specGoalWaitStartedAt > 0 && Date.now() - specGoalWaitStartedAt > SPEC_GOAL_TIMEOUT_MS) {
@@ -207,7 +232,7 @@
           // Keep pendingPrompt so the goal text remains pre-filled in the textarea.
           pendingPromptIsSpecGoal = false;
           specGoalWaitStartedAt = 0;
-          error = 'Your workspace took too long to start. Click "Try again" to resubmit your goal, or refresh to check if it arrived.';
+          error = 'Your project took too long to start. Type your goal below to try again, or refresh to check if it arrived.';
         }
       } else if (!running) {
         clearInterval(previewPollInterval);
@@ -222,7 +247,7 @@
       // brief 502s from the workspace API are normal during VM scheduling and don't
       // represent actionable failures for the user
       if (phase === 'idle') {
-        error = String(e);
+        error = 'Lost connection — please refresh the page.';
       }
     } finally {
       pollingActive = false;
@@ -254,6 +279,7 @@
         clearInterval(confirmationInterval);
         clearInterval(elapsedInterval);
         clearInterval(staleActivityInterval);
+        staleMessageIds.clear();
       }
     } catch { /* worker may not be ready yet */ }
   }
@@ -280,7 +306,7 @@
           workerWarmRetries++;
           if (workerWarmRetries >= MAX_WORKER_WARM_RETRIES) {
             clearInterval(goalRetryInterval);
-            error = 'Workspace took too long to start. Please try again.';
+            error = 'Claude took too long to wake up. Please try again.';
             pendingPrompt = null;
             phase = 'idle';
             isWorkerWarming = false;
@@ -292,7 +318,7 @@
           goalRetries++;
           if (goalRetries >= MAX_GOAL_RETRIES) {
             clearInterval(goalRetryInterval);
-            error = `Failed to post goal after ${MAX_GOAL_RETRIES} attempts`;
+            error = `Couldn't reach Claude. Please try again.`;
             pendingPrompt = null;
             phase = 'idle';
           }
@@ -350,6 +376,17 @@
     clearInterval(staleActivityInterval);
     eventSource = createEventSource(workspaceName);
 
+    // Show an initial message immediately so the feed isn't blank while Claude starts
+    if (activity.length === 0) {
+      activity = [{
+        id: String(Date.now()),
+        kind: 'hook' as const,
+        text: '⚙ Claude is reading your request…',
+        timestamp: new Date(),
+        color: 'text-yellow-400',
+      }];
+    }
+
     function addActivityItem(item: ActivityItem) {
       // Suppress replays within a 5-minute window — handles SSE reconnect re-sending prior events
       // and consecutive duplicates during long build phases.
@@ -367,19 +404,42 @@
     }
 
     // Inject a patience message if no real activity appears for STALE_ACTIVITY_MS.
-    // Bypasses dedup intentionally — this is a synthetic heartbeat, not an SSE replay.
-    // Capped at 3 repetitions across ALL reconnects (staleActivityCount is module-level).
+    // Replaces the previous stale message rather than stacking — avoids spam appearance.
+    // Capped at 6 repetitions across ALL reconnects (staleActivityCount is module-level).
+    // staleMessageId is also module-level so it survives multiple connectStream() calls.
     staleActivityInterval = setInterval(() => {
       if (phase === 'streaming' && Date.now() - lastRealActivityAt >= STALE_ACTIVITY_MS) {
-        if (staleActivityCount >= 3) return; // cap — user knows it's still working
         staleActivityCount += 1;
-        activity = [...activity, {
-          id: String(Date.now()),
+        const staleMessages = [
+          '⚙ Claude is reading your request and planning the app…',
+          '⚙ Writing the code — this takes a few minutes for first builds',
+          '⚙ Still working — you can close this tab and come back later',
+          '⚙ Building in the background…',
+          '⚙ Almost there — packaging the final pieces…',
+        ];
+        // After the initial messages, cycle calmly so the feed never looks frozen
+        const extendedMessages = [
+          '⚙ Still building — this can take a while for complex apps',
+          '⚙ Working away in the background…',
+          '⚙ Your app will be ready soon — feel free to close this tab',
+        ];
+        const newId = String(Date.now());
+        const idx = staleActivityCount - 1;
+        const newText = idx < staleMessages.length
+          ? staleMessages[idx]
+          : extendedMessages[(idx - staleMessages.length) % extendedMessages.length];
+        const newItem = {
+          id: newId,
           kind: 'hook' as const,
-          text: staleActivityCount < 3 ? '⚙ Still building… hang tight' : '⚙ Still working in the background…',
+          text: newText,
           timestamp: new Date(),
           color: 'text-yellow-400',
-        }];
+        };
+        // Accumulate stale messages (don't replace old ones) — gives a
+        // growing history so the feed never looks frozen. Cap at 10 total.
+        activity = [...activity, newItem].slice(-10);
+        staleMessageId = newId;
+        staleMessageIds.add(newId);
         lastRealActivityAt = Date.now(); // reset so the next message waits another STALE_ACTIVITY_MS
       }
     }, 10_000);
@@ -394,6 +454,7 @@
           clearInterval(goalPollInterval);
           clearInterval(elapsedInterval);
           clearInterval(staleActivityInterval);
+          staleMessageIds.clear();
           loadGoals();
         }
       }
@@ -426,7 +487,7 @@
     if (phase !== 'idle') return;
 
     if (!workspace?.ipAddress) {
-      error = 'Workspace not running';
+      error = 'Your project is not ready yet — please wait a moment.';
       return;
     }
 
@@ -436,6 +497,8 @@
     clearInterval(staleActivityInterval);
     lastRealActivityAt = 0;
     staleActivityCount = 0; // reset cap for new goal session
+    staleMessageId = null;
+    staleMessageIds.clear();
     pendingPrompt = prompt;
     pendingPromptIsSpecGoal = false; // user-entered follow-up goal — must call addGoal()
     await postGoalWithRetry(prompt);
@@ -454,16 +517,21 @@
       clearInterval(staleActivityInterval);
       lastRealActivityAt = 0;
       staleActivityCount = 0;
+      staleMessageId = null;
+      staleMessageIds.clear();
       phase = 'confirming_goal';
       startConfirmation(goal.id);
     } catch (e) {
       isDeploying = false;
-      error = `Deploy failed: ${e instanceof Error ? e.message : String(e)}`;
+      error = 'Deploy failed. Please try again.';
     }
   }
 
-  $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown');
+  $: vmStatus = provisioningFailed ? 'Error' : (workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown'));
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
+  // Provisioning timeout states — shown when VM takes longer than expected
+  $: provisioningOverdue = isProvisioning && waitElapsedSeconds >= 300;  // > 5 min
+  $: provisioningFailed = isProvisioning && waitElapsedSeconds >= 660;   // > 11 min
   $: waitElapsedStr = waitElapsedSeconds > 0
     ? (waitElapsedSeconds < 60 ? `${waitElapsedSeconds}s` : `${Math.floor(waitElapsedSeconds/60)}m ${waitElapsedSeconds%60}s`)
     : '';
@@ -499,18 +567,18 @@
     {#if isWorkerWarming}
       <span style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
-        VM warming up…
+        Claude is waking up…
       </span>
     {:else if phase === 'posting_goal'}
       <span style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
-        Connecting to Claude… ({goalRetries}/{MAX_GOAL_RETRIES})
+        Connecting to Claude…
       </span>
     {/if}
     {#if phase === 'confirming_goal'}
       <span style="font-size: 11px; color: #A78BFA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #A78BFA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
-        {confirmationWarning ? 'Goal queued — Claude not started yet' : 'Claude is picking up your goal…'}
+        {confirmationWarning ? 'Your request is queued — Claude will start soon' : 'Sending your request to Claude…'}
       </span>
     {/if}
     {#if phase === 'streaming' && elapsedStr}
@@ -520,7 +588,11 @@
     {/if}
     {#if isWorking}
       <button
-        on:click={cancelWorkspace}
+        on:click={() => {
+          if (confirm('Stop building and delete this project? This can\'t be undone.')) {
+            cancelWorkspace();
+          }
+        }}
         style="
           margin-left: auto; font-size: 11px; color: var(--color-text-muted); background: transparent;
           border: 1px solid var(--color-border); border-radius: 5px;
@@ -530,16 +602,17 @@
       >✕ Cancel</button>
     {/if}
     {#if error}
-      <span style="font-size: 11px; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
+      <span style="font-size: 13px; font-weight: 500; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
     {/if}
   </header>
 
   <!-- Body: sidebar + preview -->
-  <div class="flex flex-1 overflow-hidden">
+  <div class="flex flex-1 overflow-hidden pb-12 md:pb-0">
     <!-- Provisioning overlay -->
     {#if isProvisioning}
       <div class="flex-1 flex flex-col items-center justify-center gap-6" style="color: var(--color-text-muted);">
-        <!-- Spinning ring -->
+        <!-- Spinning ring (hidden in error state) -->
+        {#if !provisioningFailed}
         <div style="position: relative; width: 56px; height: 56px;">
           <div style="
             position: absolute; inset: 0;
@@ -561,54 +634,60 @@
             color: var(--color-accent); font-size: 16px;
           ">◆</div>
         </div>
-        <div class="text-center">
-          {#if vmStatus === 'Scheduling'}
-            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Finding your machine</p>
-            <p style="font-size: 13px; color: var(--color-text-muted);">Securing a spot in the queue…</p>
-          {:else}
-            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Starting your build environment</p>
-            <p style="font-size: 13px; color: var(--color-text-muted);">First builds can take a few minutes</p>
-          {/if}
-        </div>
+        {/if}
+        {#if provisioningFailed}
+          <div class="text-center">
+            <p style="font-size: 15px; font-weight: 600; color: #F87171; margin-bottom: 6px; letter-spacing: -0.02em;">We're having trouble finding a machine</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">Your request is saved — give it a moment and try again.</p>
+          </div>
+        {:else if provisioningOverdue}
+          <div class="text-center">
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Still getting your machine ready…</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">This can take a few minutes on busy days. You can close this tab and come back.</p>
+          </div>
+        {:else}
+          <div class="text-center">
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Getting your project ready</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">{PROVISIONING_TIPS[provisioningTipIndex]}</p>
+          </div>
+        {/if}
         {#if pendingPrompt}
           <div style="background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 10px 14px; max-width: 380px; text-align: left;">
-            <p style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-bottom: 4px; letter-spacing: 0.06em; text-transform: uppercase;">Your goal</p>
+            <p style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-bottom: 4px; letter-spacing: 0.06em; text-transform: uppercase;">Your request</p>
             <p style="font-size: 13px; color: var(--color-text-secondary); line-height: 1.5;">{pendingPrompt.slice(0, 160)}{pendingPrompt.length > 160 ? '…' : ''}</p>
           </div>
         {/if}
-        {#if waitElapsedStr}
+        {#if waitElapsedStr && !provisioningFailed}
           <p style="font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono);">⏱ {waitElapsedStr}</p>
         {/if}
-        <p style="font-size: 12px; color: var(--color-text-muted);">You can close this tab and come back — your project will keep its URL.</p>
-        <button
-          on:click={cancelWorkspace}
-          style="
-            font-size: 11px; color: var(--color-text-muted); background: transparent;
-            border: 1px solid var(--color-border); border-radius: 6px;
-            padding: 4px 12px; cursor: pointer; font-family: var(--font-mono);
-            transition: color 0.15s, border-color 0.15s;
-          "
-        >Cancel</button>
-        {#if (events as Array<{reason?: string; message?: string}>).length > 0}
-          <div style="
-            font-family: var(--font-mono);
-            font-size: 11px;
-            color: var(--color-text-muted);
-            max-width: 380px;
-            background: rgba(14,20,34,0.8);
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            padding: 10px 14px;
-          ">
-            {#each (events as Array<{reason?: string; message?: string}>) as ev}
-              <div style="padding: 1px 0; line-height: 1.6;">{ev.reason}: {ev.message}</div>
-            {/each}
-          </div>
+        {#if provisioningFailed}
+          <button
+            on:click={() => {
+              const goalToSave = pendingPrompt || workspace?.goal || data.workspace?.goal;
+              if (goalToSave) localStorage.setItem('doable:retryGoal', goalToSave);
+              cancelWorkspace();
+            }}
+            style="
+              font-size: 13px; color: white; background: var(--color-accent);
+              border: none; border-radius: 6px;
+              padding: 8px 20px; cursor: pointer; font-family: var(--font-sans);
+            "
+          >Try again</button>
+        {:else}
+          <button
+            on:click={cancelWorkspace}
+            style="
+              font-size: 11px; color: var(--color-text-muted); background: transparent;
+              border: 1px solid var(--color-border); border-radius: 6px;
+              padding: 4px 12px; cursor: pointer; font-family: var(--font-mono);
+              transition: color 0.15s, border-color 0.15s;
+            "
+          >Cancel</button>
         {/if}
       </div>
     {:else}
-      <!-- Left: Chat sidebar (320px, hidden on mobile) -->
-      <div class="hidden md:flex md:w-80 shrink-0 flex-col overflow-hidden">
+      <!-- Left: Chat sidebar (320px, hidden on mobile unless chat tab active) -->
+      <div class="{mobileTab === 'chat' ? 'flex' : 'hidden'} md:flex md:w-80 shrink-0 flex-col overflow-hidden">
         <ChatSidebar
           {goals}
           {activity}
@@ -619,10 +698,26 @@
         />
       </div>
 
-      <!-- Right: Live preview -->
-      <div class="flex-1 overflow-hidden">
+      <!-- Right: Live preview (hidden on mobile when chat tab active) -->
+      <div class="{mobileTab === 'preview' ? 'flex' : 'hidden'} md:flex flex-1 overflow-hidden">
         <LivePreview {workspace} {previewActive} {isWorking} {isReady} {isDeploying} on:deploy={handleDeploy} />
       </div>
     {/if}
   </div>
+
+  <!-- Mobile tab bar (hidden on md+) -->
+  {#if !isProvisioning}
+    <div class="md:hidden fixed bottom-0 left-0 right-0 flex border-t" style="background: var(--color-surface); border-color: var(--color-border); z-index: 10;">
+      <button
+        on:click={() => mobileTab = 'preview'}
+        class="flex-1 py-3 text-sm font-medium"
+        style="color: {mobileTab === 'preview' ? 'var(--color-accent)' : 'var(--color-text-muted)'};"
+      >Preview</button>
+      <button
+        on:click={() => mobileTab = 'chat'}
+        class="flex-1 py-3 text-sm font-medium"
+        style="color: {mobileTab === 'chat' ? 'var(--color-accent)' : 'var(--color-text-muted)'};"
+      >Chat</button>
+    </div>
+  {/if}
 </div>
