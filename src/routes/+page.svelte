@@ -126,8 +126,8 @@
       return;
     }
     const repoUrl = 'https://github.com/' + importRepoUrl.trim();
-    if (!repoUrl.startsWith('https://github.com/') || !importRepoUrl.trim().includes('/')) {
-      importRepoUrlError = 'Must be a public GitHub URL (https://github.com/...)';
+    if (!/^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim())) {
+      importRepoUrlError = 'Enter as username/repo-name';
       return;
     }
     // Fix 5: give visual feedback when prompt is empty
@@ -184,7 +184,7 @@
 
   let canSubmit = $derived(
     !validateName(name) && !!prompt.trim() && !creating &&
-    (activeTab === 'build' || importRepoUrl.trim().includes('/'))
+    (activeTab === 'build' || /^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim()))
   );
 </script>
 
@@ -281,9 +281,9 @@
           <div style="display: flex; align-items: center; gap: 0;">
             <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">github.com/</span>
             <input
-              type="url"
+              type="text"
               bind:value={importRepoUrl}
-              on:input={() => { if (importRepoUrl.trim().includes('/')) importRepoUrlError = ''; }}
+              on:input={() => { if (/^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim())) importRepoUrlError = ''; }}
               placeholder="username/your-app"
               style="
                 flex: 1;
