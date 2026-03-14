@@ -588,27 +588,27 @@
     </button>
     <span style="color: var(--color-border); font-size: 16px; line-height: 1;">/</span>
     <span style="color: var(--color-accent); font-size: 14px;">◆</span>
-    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em;">{workspaceName}</span>
+    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;">{workspaceName}</span>
     <WorkspaceStatus status={isWorking ? 'Building' : vmStatus} />
     {#if isWorkerWarming}
-      <span style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
+      <span class="hidden md:flex" style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         Claude is waking up…
       </span>
     {:else if phase === 'posting_goal'}
-      <span style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
+      <span class="hidden md:flex" style="font-size: 11px; color: #F59E0B; font-family: var(--font-mono); align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         Connecting to Claude…
       </span>
     {/if}
     {#if phase === 'confirming_goal'}
-      <span style="font-size: 11px; color: #A78BFA; font-family: var(--font-mono); display: flex; align-items: center; gap: 4px;">
+      <span class="hidden md:flex" style="font-size: 11px; color: #A78BFA; font-family: var(--font-mono); align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #A78BFA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>
         {confirmationWarning ? 'Your request is queued — Claude will start soon' : 'Sending your request to Claude…'}
       </span>
     {/if}
     {#if phase === 'streaming' && elapsedStr}
-      <span style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-left: 4px;">
+      <span class="hidden md:inline" style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); margin-left: 4px;">
         {elapsedStr}
       </span>
     {/if}
