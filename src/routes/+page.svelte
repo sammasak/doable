@@ -125,7 +125,8 @@
       nameInput?.focus();
       return;
     }
-    if (!importRepoUrl.trim().startsWith('https://github.com/')) {
+    const repoUrl = 'https://github.com/' + importRepoUrl.trim();
+    if (!repoUrl.startsWith('https://github.com/') || !importRepoUrl.trim().includes('/')) {
       importRepoUrlError = 'Must be a public GitHub URL (https://github.com/...)';
       return;
     }
@@ -146,7 +147,7 @@
         runStrategy: 'Always',
         idleHaltAfterMinutes: 30,
         goal: prompt.trim(),
-        repoUrl: importRepoUrl.trim(),
+        repoUrl: repoUrl,
       });
       // Fix 4: use workspace.name from API response (consistent with handleCreate pattern)
       goto(`/projects/${workspace.name}`);
@@ -183,7 +184,7 @@
 
   let canSubmit = $derived(
     !validateName(name) && !!prompt.trim() && !creating &&
-    (activeTab === 'build' || importRepoUrl.trim().startsWith('https://github.com/'))
+    (activeTab === 'build' || importRepoUrl.trim().includes('/'))
   );
 </script>
 
@@ -282,8 +283,8 @@
             <input
               type="url"
               bind:value={importRepoUrl}
-              on:input={() => { if (importRepoUrl.trim()) importRepoUrlError = ''; }}
-              placeholder="https://github.com/username/your-app"
+              on:input={() => { if (importRepoUrl.trim().includes('/')) importRepoUrlError = ''; }}
+              placeholder="username/your-app"
               style="
                 flex: 1;
                 background: transparent;

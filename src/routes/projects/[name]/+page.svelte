@@ -617,7 +617,7 @@
   </header>
 
   <!-- Body: sidebar + preview -->
-  <div class="flex flex-1 overflow-hidden pb-12 md:pb-0">
+  <div class="{isProvisioning ? '' : 'pb-12'} md:pb-0 flex flex-1 overflow-hidden">
     <!-- Provisioning overlay -->
     {#if isProvisioning}
       <div class="flex-1 flex flex-col items-center justify-center gap-6" style="color: var(--color-text-muted);">
