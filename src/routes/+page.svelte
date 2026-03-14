@@ -5,6 +5,8 @@
   import type { Workspace } from '$lib/api/workstation';
   import ProjectList from '$lib/components/ProjectList.svelte';
 
+  const REPO_PATH_RE = /^[^\s/]+\/[^\s/]+$/;
+
   let workspaces: Workspace[] = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -125,11 +127,11 @@
       nameInput?.focus();
       return;
     }
-    const repoUrl = 'https://github.com/' + importRepoUrl.trim();
-    if (!/^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim())) {
+    if (!REPO_PATH_RE.test(importRepoUrl.trim())) {
       importRepoUrlError = 'Enter as username/repo-name';
       return;
     }
+    const repoUrl = 'https://github.com/' + importRepoUrl.trim();
     // Fix 5: give visual feedback when prompt is empty
     if (!prompt.trim()) {
       promptError = 'Please describe what you want to do with this repo';
@@ -184,7 +186,7 @@
 
   let canSubmit = $derived(
     !validateName(name) && !!prompt.trim() && !creating &&
-    (activeTab === 'build' || /^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim()))
+    (activeTab === 'build' || REPO_PATH_RE.test(importRepoUrl.trim()))
   );
 </script>
 
@@ -283,7 +285,7 @@
             <input
               type="text"
               bind:value={importRepoUrl}
-              on:input={() => { if (/^[^\s/]+\/[^\s/]+$/.test(importRepoUrl.trim())) importRepoUrlError = ''; }}
+              on:input={() => { if (REPO_PATH_RE.test(importRepoUrl.trim())) importRepoUrlError = ''; }}
               placeholder="username/your-app"
               style="
                 flex: 1;
