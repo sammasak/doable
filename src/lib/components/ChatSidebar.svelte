@@ -66,10 +66,10 @@
             font-size: 10px;
             color: var(--color-text-muted);
             font-family: var(--font-mono);
-            max-width: 160px;
             white-space: normal;
             overflow-wrap: break-word;
-            word-break: break-word;
+            max-height: 3em;
+            overflow: hidden;
           " title={last.text}>{last.text}</span>
         {/if}
       </div>
