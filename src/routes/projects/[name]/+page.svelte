@@ -440,20 +440,17 @@
         '⚙ Claude is reading your request and planning the app…',
         '⚙ Writing the code — this takes a few minutes for first builds',
         '⚙ Still working — you can close this tab and come back later',
-        '⚙ Building in the background…',
-        '⚙ Almost there — packaging the final pieces…',
-      ];
-      // After the initial messages, cycle calmly so the feed never looks frozen
-      const extendedMessages = [
-        '⚙ Still building — this can take a while for complex apps',
-        '⚙ Working away in the background…',
-        '⚙ Your app will be ready soon — feel free to close this tab',
+        '⚙ Building in the background — complex apps can take 5–10 minutes',
+        '⚙ Hang tight, this one is taking a while…',
       ];
       const newId = String(Date.now());
       const idx = staleActivityCount - 1;
-      const newText = idx < staleMessages.length
-        ? staleMessages[idx]
-        : extendedMessages[(idx - staleMessages.length) % extendedMessages.length];
+      if (idx >= staleMessages.length) {
+        // All initial stale messages shown — stop adding more
+        // The footer "Claude is coding in the background…" handles ongoing state
+        return;
+      }
+      const newText = staleMessages[idx];
       const newItem = {
         id: newId,
         kind: 'hook' as const,
