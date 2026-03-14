@@ -20,6 +20,13 @@
   let hasSeenRealContent = false;
   let iframeEl: HTMLIFrameElement | null = null;
 
+  let prevWorkspaceName: string | undefined;
+  $: if (workspace?.name !== prevWorkspaceName) {
+    prevWorkspaceName = workspace?.name;
+    hasSeenRealContent = false;
+    showShimmer = false;
+  }
+
   function reload() {
     key += 1;
     // Reset shimmer / real-content tracking on manual reload
@@ -79,8 +86,8 @@
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
-  <!-- Building banner — shown whenever Claude is working and no real app content has loaded yet -->
-  {#if isWorking && !hasSeenRealContent}
+  <!-- Building banner — shown whenever Claude is working and no real app content has loaded yet (hidden when iframe is active to avoid duplicate banner) -->
+  {#if isWorking && !hasSeenRealContent && !previewActive}
     <div style="
       padding: 6px 12px;
       font-size: 12px;
@@ -209,7 +216,7 @@
           on:load={onIframeLoad}
         ></iframe>
       {/key}
-      {#if isWorking && !hasSeenRealContent && previewActive}
+      {#if isWorking && !hasSeenRealContent}
         <!-- Inline overlay for when iframe shows the raw Vite template (real content not yet detected) -->
         <div style="
           position: absolute;
