@@ -15,6 +15,9 @@
   let prompt = '';
   let nameError = '';
   let nameInput: HTMLInputElement;
+  let activeTab: 'build' | 'import' = $state('build');
+  let importRepoUrl = $state('');
+  let importRepoUrlError = $state('');
 
   // Cross-platform submit hint
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
@@ -33,6 +36,13 @@
     const savedName = localStorage.getItem('doable:lastProjectName');
     if (savedName) name = savedName;
 
+    // Restore goal if user was sent back from a failed provisioning
+    const retryGoal = localStorage.getItem('doable:retryGoal');
+    if (retryGoal) {
+      prompt = retryGoal;
+      localStorage.removeItem('doable:retryGoal');
+    }
+
     await refresh();
     loading = false;
   });
@@ -44,8 +54,8 @@
   async function refresh() {
     try {
       workspaces = await listWorkspaces();
-    } catch (e) {
-      error = String(e);
+    } catch {
+      // Suppress — project list is cosmetic, don't show raw errors
     }
   }
 
@@ -90,7 +100,54 @@
       });
       goto(`/projects/${name}`);
     } catch (e) {
-      error = String(e);
+      const msg = String(e);
+      if (msg.includes('409')) {
+        // Project already exists — navigate there instead of showing an error
+        creating = false;
+        goto(`/projects/${name}`);
+        return;
+      }
+      error = 'Something went wrong. Please try a different project name or refresh the page.';
+      creating = false;
+    }
+  }
+
+  async function handleImport() {
+    nameError = '';
+    importRepoUrlError = '';
+
+    if (!name.trim()) {
+      nameError = 'Project name is required';
+      nameInput?.focus();
+      return;
+    }
+    if (!importRepoUrl.trim().startsWith('https://github.com/')) {
+      importRepoUrlError = 'Must be a public GitHub URL (https://github.com/...)';
+      return;
+    }
+    if (!prompt.trim()) return;
+
+    creating = true;
+    error = '';
+    try {
+      const workspace = await createWorkspace({
+        name: name.trim(),
+        containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
+        bootstrapSecretName: 'claude-worker-bootstrap',
+        runStrategy: 'Always',
+        idleHaltAfterMinutes: 60,
+        goal: prompt.trim(),
+        repoUrl: importRepoUrl.trim(),
+      });
+      goto(`/projects/${workspace.name}`);
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes('409')) {
+        creating = false;
+        goto(`/projects/${name.trim()}`);
+        return;
+      }
+      error = 'Something went wrong. Please try a different project name or refresh the page.';
       creating = false;
     }
   }
@@ -108,11 +165,15 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      handleCreate();
+      if (activeTab === 'import') handleImport();
+      else handleCreate();
     }
   }
 
-  $: canSubmit = !!name && !!prompt.trim() && !nameError && !creating;
+  let canSubmit = $derived(
+    !!name && !!prompt.trim() && !nameError && !creating &&
+    (activeTab === 'build' || !!importRepoUrl.trim().startsWith('https://github.com/'))
+  );
 </script>
 
 <svelte:head>
@@ -170,8 +231,68 @@
       overflow: hidden;
       box-shadow: 0 0 0 1px rgba(99,102,241,0.05), 0 24px 48px rgba(0,0,0,0.3);
     ">
+      <!-- Tab switcher -->
+      <div style="display: flex; gap: 6px; padding: 12px 16px 0;">
+        <button
+          on:click={() => activeTab = 'build'}
+          style="
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            background: {activeTab === 'build' ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)'};
+            color: {activeTab === 'build' ? 'white' : 'var(--color-text-muted)'};
+          "
+        >Build from scratch</button>
+        <button
+          on:click={() => activeTab = 'import'}
+          style="
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            background: {activeTab === 'import' ? 'var(--color-accent)' : 'rgba(255,255,255,0.06)'};
+            color: {activeTab === 'import' ? 'white' : 'var(--color-text-muted)'};
+          "
+        >Import repo</button>
+      </div>
+
+      <!-- Repo URL field (import tab only) -->
+      {#if activeTab === 'import'}
+        <div style="border-bottom: 1px solid {importRepoUrlError ? 'rgba(248,113,113,0.6)' : 'var(--color-border)'}; transition: border-color 0.15s; margin-top: 12px;">
+          <div style="display: flex; align-items: center; gap: 0;">
+            <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">repo /</span>
+            <input
+              type="url"
+              bind:value={importRepoUrl}
+              on:input={() => { if (importRepoUrl.trim()) importRepoUrlError = ''; }}
+              placeholder="https://github.com/you/your-repo"
+              style="
+                flex: 1;
+                background: transparent;
+                border: none;
+                outline: none;
+                padding: 12px 16px 12px 4px;
+                font-family: var(--font-mono);
+                font-size: 13px;
+                color: var(--color-text-primary);
+              "
+            />
+          </div>
+          {#if importRepoUrlError}
+            <span style="display: block; padding: 0 16px 8px; font-size: 11px; color: #F87171; font-family: var(--font-mono);">{importRepoUrlError}</span>
+          {/if}
+        </div>
+      {/if}
+
       <!-- Name row -->
-      <div style="display: flex; align-items: center; gap: 0; border-bottom: 1px solid {nameError ? 'rgba(248,113,113,0.6)' : 'var(--color-border)'}; transition: border-color 0.15s;">
+      <div style="display: flex; align-items: center; gap: 0; border-bottom: 1px solid {nameError ? 'rgba(248,113,113,0.6)' : 'var(--color-border)'}; transition: border-color 0.15s; margin-top: {activeTab === 'import' ? '0' : '12px'};">
         <span style="padding: 0 12px 0 16px; color: var(--color-text-muted); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; user-select: none;">project /</span>
         <input
           type="text"
@@ -199,7 +320,7 @@
       <textarea
         bind:value={prompt}
         on:keydown={handleKeydown}
-        placeholder="What do you want to create?&#10;&#10;Try: Make a recipe collection site, or Build a habit tracker with streaks..."
+        placeholder={activeTab === 'import' ? 'What do you want to do with this repo?\n\nTry: Add a dark mode toggle, or Fix the mobile layout...' : 'What do you want to create?\n\nTry: Make a recipe collection site, or Build a habit tracker with streaks...'}
         rows={5}
         style="
           width: 100%;
@@ -218,31 +339,35 @@
 
       <!-- Examples + Submit row -->
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 12px; gap: 8px; flex-wrap: wrap;">
-        <!-- Example chips -->
-        <div style="display: flex; gap: 6px; flex-wrap: wrap; flex: 1;">
-          {#each examplePrompts.slice(0, 3) as ex}
-            <button
-              on:click={() => useExample(ex)}
-              style="
-                font-family: var(--font-mono);
-                font-size: 11px;
-                color: var(--color-text-muted);
-                background: rgba(255,255,255,0.03);
-                border: 1px solid var(--color-border);
-                border-radius: 20px;
-                padding: 3px 10px;
-                cursor: pointer;
-                transition: color 0.15s, border-color 0.15s;
-                white-space: nowrap;
-              "
-              class="hover-text hover-border-accent"
-            >{ex.split(' ').slice(0, 4).join(' ')}…</button>
-          {/each}
-        </div>
+        <!-- Example chips (build tab only) -->
+        {#if activeTab === 'build'}
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; flex: 1;">
+            {#each examplePrompts.slice(0, 3) as ex}
+              <button
+                on:click={() => useExample(ex)}
+                style="
+                  font-family: var(--font-mono);
+                  font-size: 11px;
+                  color: var(--color-text-muted);
+                  background: rgba(255,255,255,0.03);
+                  border: 1px solid var(--color-border);
+                  border-radius: 20px;
+                  padding: 3px 10px;
+                  cursor: pointer;
+                  transition: color 0.15s, border-color 0.15s;
+                  white-space: nowrap;
+                "
+                class="hover-text hover-border-accent"
+              >{ex.split(' ').slice(0, 4).join(' ')}…</button>
+            {/each}
+          </div>
+        {:else}
+          <div style="flex: 1;"></div>
+        {/if}
 
         <!-- Submit -->
         <button
-          on:click={handleCreate}
+          on:click={activeTab === 'import' ? handleImport : handleCreate}
           disabled={!canSubmit}
           style="
             display: flex;
@@ -265,6 +390,8 @@
           {#if creating}
             <span style="display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin360 0.7s linear infinite;"></span>
             Provisioning...
+          {:else if activeTab === 'import'}
+            Import →
           {:else}
             Build →
           {/if}
