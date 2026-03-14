@@ -553,7 +553,8 @@
     }
   }
 
-  $: vmStatus = provisioningFailed ? 'Error' : (workspace?.vmStatus ?? (isProvisioning ? 'Provisioning' : 'Unknown'));
+  // Don't surface 'Error' badge on timeout alone — that's a transient delay, not a failure
+  $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Getting Ready' : 'Unknown');
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
   // Provisioning timeout states — shown when VM takes longer than expected
   $: provisioningOverdue = isProvisioning && waitElapsedSeconds >= 300;  // > 5 min
@@ -637,7 +638,6 @@
     {#if isProvisioning}
       <div class="flex-1 flex flex-col items-center justify-center gap-6" style="color: var(--color-text-muted);">
         <!-- Spinning ring (hidden in error state) -->
-        {#if !provisioningFailed}
         <div style="position: relative; width: 56px; height: 56px;">
           <div style="
             position: absolute; inset: 0;
@@ -659,11 +659,10 @@
             color: var(--color-accent); font-size: 16px;
           ">◆</div>
         </div>
-        {/if}
         {#if provisioningFailed}
           <div class="text-center">
-            <p style="font-size: 15px; font-weight: 600; color: #F87171; margin-bottom: 6px; letter-spacing: -0.02em;">We're having trouble finding a machine</p>
-            <p style="font-size: 13px; color: var(--color-text-muted);">Your request is saved — give it a moment and try again.</p>
+            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Taking a bit longer than usual…</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">We're still finding a machine for you. Your request is saved — you can close this tab and come back in a few minutes.</p>
           </div>
         {:else if schedulingFailed && !provisioningOverdue}
           <div class="text-center">
@@ -687,33 +686,18 @@
             <p style="font-size: 13px; color: var(--color-text-secondary); line-height: 1.5;">{pendingPrompt.slice(0, 160)}{pendingPrompt.length > 160 ? '…' : ''}</p>
           </div>
         {/if}
-        {#if waitElapsedStr && !provisioningFailed}
+        {#if waitElapsedStr}
           <p style="font-size: 12px; color: var(--color-text-muted); font-family: var(--font-mono);">⏱ {waitElapsedStr}</p>
         {/if}
-        {#if provisioningFailed}
-          <button
-            on:click={() => {
-              const goalToSave = pendingPrompt || workspace?.goal || data.workspace?.goal;
-              if (goalToSave) localStorage.setItem('doable:retryGoal', goalToSave);
-              cancelWorkspace();
-            }}
-            style="
-              font-size: 13px; color: white; background: var(--color-accent);
-              border: none; border-radius: 6px;
-              padding: 8px 20px; cursor: pointer; font-family: var(--font-sans);
-            "
-          >Try again</button>
-        {:else}
-          <button
-            on:click={cancelWorkspace}
-            style="
-              font-size: 11px; color: var(--color-text-muted); background: transparent;
-              border: 1px solid var(--color-border); border-radius: 6px;
-              padding: 4px 12px; cursor: pointer; font-family: var(--font-mono);
-              transition: color 0.15s, border-color 0.15s;
-            "
+        <button
+          on:click={cancelWorkspace}
+          style="
+            font-size: 11px; color: var(--color-text-muted); background: transparent;
+            border: 1px solid var(--color-border); border-radius: 6px;
+            padding: 4px 12px; cursor: pointer; font-family: var(--font-mono);
+            transition: color 0.15s, border-color 0.15s;
+          "
           >Cancel</button>
-        {/if}
       </div>
     {:else}
       <!-- Left: Chat sidebar (320px, hidden on mobile unless chat tab active) -->
