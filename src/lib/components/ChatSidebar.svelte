@@ -67,9 +67,9 @@
             color: var(--color-text-muted);
             font-family: var(--font-mono);
             max-width: 160px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: break-word;
+            word-break: break-word;
           " title={last.text}>{last.text}</span>
         {/if}
       </div>
