@@ -7,7 +7,7 @@
   export let previewActive: boolean = false;
   export let isWorking: boolean = false;
   export let isDeploying: boolean = false;
-  // Accepted for parent compatibility; not used in this component
+  // When true, switches the preview iframe from the Vite dev proxy to the deployed URL
   export let isReady: boolean = false;
 
   const dispatch = createEventDispatcher<{ deploy: void }>();
@@ -87,23 +87,34 @@
 
   // When isReady becomes true (goal completed), fetch the deployed URL
   let prevIsReady = false;
-  $: if (isReady && !prevIsReady && workspace?.name) {
-    prevIsReady = isReady;
-    getDeployedUrl(workspace.name).then(url => {
-      if (url && url !== deployedUrl) deployedUrl = url;
-    });
+  $: {
+    if (isReady && !prevIsReady && workspace?.name) {
+      getDeployedUrl(workspace.name).then(url => {
+        if (url && url !== deployedUrl) deployedUrl = url;
+      });
+    }
+    prevIsReady = isReady; // always sync — allows re-fetch on second isReady transition
   }
 
   // Use deployed URL as iframe source when ready, fall back to proxy during build
   $: iframeSrc = (isReady && deployedUrl) ? deployedUrl : proxyBase;
 
+  // When switched to deployed URL (cross-origin), mark content as real immediately
+  // so the building overlay is dismissed and doesn't cover the deployed app.
+  $: if (isReady && deployedUrl && iframeSrc === deployedUrl) {
+    hasSeenRealContent = true;
+  }
+
   // Force iframe reload when switching from proxy to deployed URL
   let prevIframeSrc: string | null = null;
-  $: if (iframeSrc !== prevIframeSrc && prevIframeSrc !== null) {
+  let prevIframeSrcInitialized = false;
+  $: {
+    if (prevIframeSrcInitialized && iframeSrc !== prevIframeSrc) {
+      key += 1;
+    }
     prevIframeSrc = iframeSrc;
-    key += 1;
+    prevIframeSrcInitialized = true;
   }
-  $: prevIframeSrc = prevIframeSrc ?? iframeSrc; // initialize on first reactive run
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
