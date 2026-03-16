@@ -102,13 +102,13 @@
         idleHaltAfterMinutes: 30,
         goal: prompt.trim() || undefined,
       });
-      goto(`/projects/${name}`);
+      await goto(`/projects/${name}`);
     } catch (e) {
       const msg = String(e);
       if (msg.includes('409')) {
         // Project already exists — navigate there instead of showing an error
         creating = false;
-        goto(`/projects/${name}`);
+        await goto(`/projects/${name}`);
         return;
       }
       error = 'Something went wrong. Please try a different project name or refresh the page.';
@@ -152,13 +152,13 @@
         repoUrl: repoUrl,
       });
       // Fix 4: use workspace.name from API response (consistent with handleCreate pattern)
-      goto(`/projects/${workspace.name}`);
+      await goto(`/projects/${workspace.name}`);
     } catch (e) {
       const msg = String(e);
       if (msg.includes('409')) {
         creating = false;
         // Fix 4: consistent navigation — use trimmed local name on 409 (same as handleCreate uses bare name)
-        goto(`/projects/${name.trim()}`);
+        await goto(`/projects/${name.trim()}`);
         return;
       }
       error = 'Something went wrong. Please try a different project name or refresh the page.';
