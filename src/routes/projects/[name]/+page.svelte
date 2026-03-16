@@ -57,6 +57,7 @@
   const MAX_WORKER_WARM_RETRIES = 24;
   let isWorkerWarming = false;
   let pollingActive = false;
+  let prevVmStatus: string | null = null;
   let confirmationStartedAt: number = 0;
   let confirmationWarning = false;
   let streamStartedAt: number = 0;
@@ -175,6 +176,28 @@
     try {
       workspace = await getWorkspace(workspaceName);
       const running = workspace.vmStatus === 'Running' && workspace.ipAddress;
+
+      // Emit activity items when VM phase transitions during provisioning — fills the
+      // silent gap while KubeVirt schedules and boots the VM (can be 2-7 minutes).
+      const newVmStatus = workspace.vmStatus ?? null;
+      if (newVmStatus !== prevVmStatus && isProvisioning && !running) {
+        const STATUS_MESSAGES: Record<string, string> = {
+          'Scheduling': 'Finding an available machine…',
+          'Starting':   'Starting your build environment…',
+          'Booting':    'Loading your project…',
+        };
+        const msg = newVmStatus ? STATUS_MESSAGES[newVmStatus] : null;
+        if (msg) {
+          activity = [...activity, {
+            id: `vm-status-${newVmStatus}`,
+            kind: 'hook' as const,
+            text: msg,
+            timestamp: new Date(),
+            color: 'text-gray-400',
+          }];
+        }
+        prevVmStatus = newVmStatus;
+      }
 
       if (running && phase === 'provisioning') {
         isProvisioning = false;
@@ -566,7 +589,7 @@
     try {
       await deleteWorkspace(workspaceName);
     } catch { /* ignore errors */ }
-    goto('/');
+    await goto('/');
   }
 
   async function handlePrompt(e: CustomEvent<string>) {

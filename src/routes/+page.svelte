@@ -72,6 +72,8 @@
 
   function useExample(ex: string) {
     prompt = ex;
+    // Focus textarea so Ctrl+Enter works immediately after clicking a chip
+    setTimeout(() => promptInput?.focus(), 0);
     // Auto-generate a name from example
     if (!name) {
       name = ex
