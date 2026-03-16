@@ -187,17 +187,18 @@
           'Booting':    'Loading your project…',
         };
         const msg = newVmStatus ? STATUS_MESSAGES[newVmStatus] : null;
-        if (msg) {
+        const itemId = `vm-status-${newVmStatus}`;
+        if (msg && !activity.some(a => a.id === itemId)) {
           activity = [...activity, {
-            id: `vm-status-${newVmStatus}`,
+            id: itemId,
             kind: 'hook' as const,
             text: msg,
             timestamp: new Date(),
             color: 'text-gray-400',
           }];
         }
-        prevVmStatus = newVmStatus;
       }
+      prevVmStatus = newVmStatus;
 
       if (running && phase === 'provisioning') {
         isProvisioning = false;
@@ -586,6 +587,8 @@
   }
 
   async function cancelWorkspace() {
+    clearInterval(pollInterval);
+    clearInterval(heartbeatInterval);
     try {
       await deleteWorkspace(workspaceName);
     } catch { /* ignore errors */ }

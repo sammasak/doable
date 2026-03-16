@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import type { Workspace } from '$lib/api/workstation';
   import { getDeployedUrl } from '$lib/api/workstation';
 
@@ -19,17 +19,26 @@
   let showShimmer = false;
   let hasSeenRealContent = false;
   let iframeEl: HTMLIFrameElement | null = null;
+  let shimmerTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function clearShimmerTimeout() {
+    if (shimmerTimeout !== null) { clearTimeout(shimmerTimeout); shimmerTimeout = null; }
+  }
+
+  onDestroy(clearShimmerTimeout);
 
   let prevWorkspaceName: string | undefined;
   $: if (workspace?.name !== prevWorkspaceName) {
     prevWorkspaceName = workspace?.name;
     hasSeenRealContent = false;
+    clearShimmerTimeout();
     showShimmer = false;
   }
 
   function reload() {
     key += 1;
     // Reset shimmer / real-content tracking on manual reload
+    clearShimmerTimeout();
     showShimmer = false;
     hasSeenRealContent = false;
   }
@@ -41,17 +50,20 @@
       // Treat empty title (our baked template has no <title> tag) or known Vite defaults as template state
       const isTemplate = !title || title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
       if (isTemplate && isWorking) {
+        clearShimmerTimeout();
+        showShimmer = true;
         if (hasSeenRealContent) {
           // Regression: real content was shown, now back to template (HMR glitch)
-          showShimmer = true;
-          setTimeout(() => { showShimmer = false; }, 8_000);
+          shimmerTimeout = setTimeout(() => { showShimmer = false; }, 8_000);
         } else {
-          // First load: template not yet modified by Claude — show overlay until real content arrives
-          showShimmer = true;
-          // No timeout: keep overlay until onIframeLoad fires again with real content
+          // First load: template not yet modified by Claude — show overlay until real content arrives.
+          // Fallback timeout: Vite HMR delivers updates without triggering a full iframe reload,
+          // so onIframeLoad may never fire again. Clear after 90s as a safety valve.
+          shimmerTimeout = setTimeout(() => { showShimmer = false; }, 90_000);
         }
       } else if (!isTemplate) {
         // Real app content loaded
+        clearShimmerTimeout();
         hasSeenRealContent = true;
         showShimmer = false;
       }
