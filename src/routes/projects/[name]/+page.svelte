@@ -589,6 +589,8 @@
   async function cancelWorkspace() {
     clearInterval(pollInterval);
     clearInterval(heartbeatInterval);
+    clearInterval(previewPollInterval);
+    clearInterval(staleActivityInterval);
     try {
       await deleteWorkspace(workspaceName);
     } catch { /* ignore errors */ }
