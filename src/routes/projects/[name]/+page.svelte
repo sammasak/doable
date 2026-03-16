@@ -325,6 +325,8 @@
         clearInterval(confirmationInterval);
         clearInterval(elapsedInterval);
         clearInterval(staleActivityInterval);
+        // Filter stale synthetic messages from the activity feed before clearing tracking set
+        activity = activity.filter(item => !staleMessageIds.has(item.id));
         staleMessageIds.clear();
         // On mobile, show a completion banner instead of force-switching tabs
         if (typeof window !== 'undefined' && window.innerWidth < 768 && mobileTab !== 'chat') completionBanner = true;
@@ -497,6 +499,8 @@
           clearInterval(goalPollInterval);
           clearInterval(elapsedInterval);
           clearInterval(staleActivityInterval);
+          // Filter stale synthetic messages from the activity feed before clearing tracking set
+          activity = activity.filter(item => !staleMessageIds.has(item.id));
           staleMessageIds.clear();
           loadGoals();
           // On mobile, show a completion banner instead of force-switching tabs
