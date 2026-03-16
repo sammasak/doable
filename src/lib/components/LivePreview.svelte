@@ -42,12 +42,14 @@
       const isTemplate = !title || title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
       if (isTemplate && isWorking) {
         if (hasSeenRealContent) {
-          // Regression: real content was visible but Vite reloaded back to the template
+          // Regression: real content was shown, now back to template (HMR glitch)
           showShimmer = true;
-          // Failsafe: auto-clear after 8s in case iframe doesn't reload with real content
           setTimeout(() => { showShimmer = false; }, 8_000);
+        } else {
+          // First load: template not yet modified by Claude — show overlay until real content arrives
+          showShimmer = true;
+          // No timeout: keep overlay until onIframeLoad fires again with real content
         }
-        // If we haven't seen real content yet, just leave the iframe visible (first load of template is expected)
       } else if (!isTemplate) {
         // Real app content loaded
         hasSeenRealContent = true;
@@ -282,7 +284,7 @@
             background: var(--color-surface);
             animation: shimmerPulse 1.8s ease-in-out infinite;
           "></div>
-          <p style="font-size: 13px; color: var(--color-text-muted); font-family: var(--font-mono);">Claude is updating the preview…</p>
+          <p style="font-size: 13px; color: var(--color-text-muted); font-family: var(--font-mono);">Claude is building your app…</p>
         </div>
       {/if}
     {:else}
