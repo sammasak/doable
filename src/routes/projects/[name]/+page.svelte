@@ -772,17 +772,20 @@
           </div>
         {:else}
           <div class="text-center">
-            <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Getting your project ready</p>
-            <!-- Show specific VM phase so the user knows something is happening -->
-            <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">
-              {#if !workspace?.vmStatus || workspace.vmStatus === 'Scheduling'}
-                Setting up your project — this takes a moment…
-              {:else if workspace.vmStatus === 'Booting' || workspace.vmStatus === 'Starting'}
-                Starting up your project…
-              {:else}
-                All set — connecting to your project…
-              {/if}
-            </p>
+            <!-- Title and subtitle both update on phase transitions so users see real progress -->
+            {#if !workspace?.vmStatus || workspace.vmStatus === 'Scheduling'}
+              <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Finding an available machine…</p>
+              <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">Setting up a build environment for your project.</p>
+            {:else if workspace.vmStatus === 'Starting'}
+              <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Starting your build environment…</p>
+              <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">Machine found — loading tools and dependencies.</p>
+            {:else if workspace.vmStatus === 'Booting'}
+              <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Loading your project…</p>
+              <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">Almost ready — starting the development server.</p>
+            {:else}
+              <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Connecting to your project…</p>
+              <p style="font-size: 13px; color: var(--color-text-muted); margin-bottom: 4px;">Your machine is ready — Claude is about to start.</p>
+            {/if}
             <!-- Rotating tip for reassurance during all provisioning phases -->
             <p style="font-size: 12px; color: var(--color-text-muted); opacity: 0.7; margin-bottom: 4px;">
               {PROVISIONING_TIPS[provisioningTipIndex]}
