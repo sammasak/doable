@@ -17,7 +17,8 @@
   let goals: Goal[] = [];
   let activity: ActivityItem[] = [];
   let schedulingFailed = false;
-  let isProvisioning = true;
+  // For pool VMs already Running when claimed, SSR data has vmStatus+ipAddress — skip overlay immediately.
+  let isProvisioning = !(data.workspace?.vmStatus === 'Running' && !!data.workspace?.ipAddress);
   let isReady = false;
   let error = '';
 
@@ -81,13 +82,23 @@
   let mobileTab: 'preview' | 'chat' = 'preview';
   // Completion notification banner — shown instead of force-switching tab on mobile
   let completionBanner = false;
+  // Desktop completion toast — shown for 10s when isReady first becomes true
+  let showCompletionToast = false;
+  let prevIsReadyToast = false;
+  $: {
+    if (isReady && !prevIsReadyToast) {
+      showCompletionToast = true;
+      setTimeout(() => { showCompletionToast = false; }, 10_000);
+    }
+    prevIsReadyToast = isReady;
+  }
   // Rotating tip shown in the provisioning overlay to break the silence during long VM boots.
   let provisioningTipIndex = 0;
   let provisioningTipInterval: ReturnType<typeof setInterval>;
   const PROVISIONING_TIPS = [
-    'Claude will start building as soon as your project is ready.',
-    'You can close this tab and come back — we\'ll keep going.',
-    'Your project URL is saved. Come back any time.',
+    "You can close this tab and come back — we'll keep going.",
+    'Claude will start building as soon as your machine is ready.',
+    'Your project URL is saved — come back any time.',
     'No downloads or installs needed — everything runs in the cloud.',
     'Your app will have its own web address you can share.',
   ];
@@ -140,9 +151,15 @@
       waitElapsedSeconds = Math.floor((Date.now() - waitStartedAt) / 1000);
     }, 1000);
 
-    // Start polling workspace status
-    await pollWorkspace();
-    pollInterval = setInterval(pollWorkspace, POLL_FAST_MS);
+    // Fast-path for pool VMs: SSR already confirmed the VM is Running with an IP.
+    // Skip the getWorkspace() round-trip — call initRunningVm() immediately so the
+    // preview iframe and stream connect without waiting ~500ms for a network fetch.
+    if (workspace?.vmStatus === 'Running' && workspace?.ipAddress && phase === 'provisioning') {
+      await initRunningVm(workspace); // sets up pollInterval internally
+    } else {
+      await pollWorkspace();
+      pollInterval = setInterval(pollWorkspace, POLL_FAST_MS);
+    }
 
     // Heartbeat to prevent idle VM halt
     heartbeatInterval = setInterval(() => heartbeat(workspaceName), HEARTBEAT_MS);
@@ -152,7 +169,7 @@
       if (isProvisioning) {
         provisioningTipIndex = (provisioningTipIndex + 1) % PROVISIONING_TIPS.length;
       }
-    }, 40_000);
+    }, 20_000);
   });
 
   onDestroy(() => {
@@ -169,6 +186,75 @@
     eventSource?.close();
     historyEventSource?.close();
   });
+
+  // Handles all state transitions when the VM becomes Running (called from both
+  // the onMount fast-path and pollWorkspace). Owns preview polling, goal loading,
+  // and stream connection so the logic isn't duplicated.
+  async function initRunningVm(ws: Workspace) {
+    // Capture IP now — used in interval closures to avoid reading the reactive `workspace` var
+    // which may update while the interval is running (stale IP or null on reschedule).
+    const capturedIp = ws.ipAddress ?? undefined;
+    try {
+      isProvisioning = false;
+      schedulingFailed = false;
+      isReady = false; // preview might not be up yet
+      clearInterval(pollInterval);
+
+      // Kick off preview check immediately, passing the known IP to skip resolveIP().
+      clearInterval(previewPollInterval);
+      previewPollInterval = setInterval(async () => {
+        const s = await getPreviewStatus(workspaceName, capturedIp);
+        previewActive = s.active;
+      }, POLL_FAST_MS);
+      getPreviewStatus(workspaceName, capturedIp).then(s => { previewActive = s.active; });
+
+      // Fetch initial goals from the VM.
+      await loadGoals();
+
+      // Show the spec goal as pendingPrompt so the user sees their goal while Claude starts.
+      if (!pendingPrompt && ws.goal) {
+        pendingPrompt = ws.goal;
+        pendingPromptIsSpecGoal = true;
+      }
+
+      const hasActiveGoal = goals.some(g => g.status === 'pending' || g.status === 'in_progress');
+      if (hasActiveGoal) {
+        if (pendingPromptIsSpecGoal) {
+          pendingPrompt = null;
+          pendingPromptIsSpecGoal = false;
+        }
+        phase = 'streaming';
+        connectStream();
+      } else if (goals.length > 0 && pendingPromptIsSpecGoal) {
+        pendingPrompt = null;
+        pendingPromptIsSpecGoal = false;
+        phase = 'idle';
+        isReady = true;
+        loadStreamHistory();
+      } else if (pendingPrompt && !pendingPromptIsSpecGoal) {
+        phase = 'posting_goal';
+        await postGoalWithRetry(pendingPrompt);
+      } else {
+        if (pendingPromptIsSpecGoal && specGoalWaitStartedAt === 0) {
+          specGoalWaitStartedAt = Date.now();
+        }
+        if (goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
+          isReady = true;
+          loadStreamHistory();
+        }
+        phase = 'idle';
+      }
+
+      // Resume polling — fast if still waiting for spec goal, slow otherwise.
+      pollInterval = setInterval(pollWorkspace, pendingPromptIsSpecGoal ? POLL_FAST_MS : POLL_SLOW_MS);
+    } catch (e) {
+      // If initRunningVm throws (e.g. unexpected error), fall back to regular polling
+      // so the page doesn't get stuck with no interval running.
+      console.error('initRunningVm failed, falling back to pollWorkspace:', e);
+      pollInterval = setInterval(pollWorkspace, POLL_FAST_MS);
+      await pollWorkspace();
+    }
+  }
 
   async function pollWorkspace() {
     if (pollingActive) return;
@@ -201,69 +287,7 @@
       prevVmStatus = newVmStatus;
 
       if (running && phase === 'provisioning') {
-        isProvisioning = false;
-        schedulingFailed = false;
-        isReady = false; // preview might not be up yet
-        clearInterval(pollInterval);
-
-        // Start preview status polling (every 5s)
-        clearInterval(previewPollInterval);
-        previewPollInterval = setInterval(async () => {
-          if (!workspace?.ipAddress) return;
-          const status = await getPreviewStatus(workspaceName);
-          previewActive = status.active;
-        }, POLL_FAST_MS);
-        // Also check immediately
-        getPreviewStatus(workspaceName).then(s => { previewActive = s.active; });
-
-        // Fetch initial goals
-        await loadGoals();
-
-        // Show the spec goal as pendingPrompt during the wait so the user sees their goal.
-        // Don't post it — the controller posts it automatically via spec.goal.
-        if (!pendingPrompt && workspace?.goal) {
-          pendingPrompt = workspace.goal;
-          pendingPromptIsSpecGoal = true;
-        }
-
-        const hasActiveGoal = goals.some(g => g.status === 'pending' || g.status === 'in_progress');
-        if (hasActiveGoal) {
-          // A goal is already queued/running (controller posted the spec goal, or a prior session)
-          // Clear the spec-goal display since the real goal object is now visible
-          if (pendingPromptIsSpecGoal) {
-            pendingPrompt = null;
-            pendingPromptIsSpecGoal = false;
-          }
-          phase = 'streaming';
-          connectStream();
-        } else if (goals.length > 0 && pendingPromptIsSpecGoal) {
-          // Goals exist but none are active — spec goal was already posted and completed.
-          // Clear the "Submitting your goal…" spinner so the user sees the completed state.
-          pendingPrompt = null;
-          pendingPromptIsSpecGoal = false;
-          phase = 'idle';
-          isReady = true;
-          // Load historical activity from SSE replay buffer so Chat tab isn't empty
-          loadStreamHistory();
-        } else if (pendingPrompt && !pendingPromptIsSpecGoal) {
-          // A follow-up goal was posted via handlePrompt before the VM became ready
-          phase = 'posting_goal';
-          await postGoalWithRetry(pendingPrompt);
-        } else {
-          // Waiting for the controller to pick up spec.goal, or truly idle
-          if (pendingPromptIsSpecGoal && specGoalWaitStartedAt === 0) {
-            specGoalWaitStartedAt = Date.now(); // start the timeout clock
-          }
-          // If goals are done and we have no active goal, load history
-          if (goals.length > 0 && !goals.some(g => g.status === 'pending' || g.status === 'in_progress')) {
-            isReady = true;
-            loadStreamHistory();
-          }
-          phase = 'idle';
-        }
-
-        // Resume polling — stay fast if we're still waiting for the controller to post spec.goal
-        pollInterval = setInterval(pollWorkspace, pendingPromptIsSpecGoal ? POLL_FAST_MS : POLL_SLOW_MS);
+        await initRunningVm(workspace);
       } else if (running && phase === 'idle' && pendingPromptIsSpecGoal) {
         // VM is running, we're waiting for the controller to post the spec goal.
         // Check if it has appeared yet and start streaming if so.
@@ -326,7 +350,7 @@
 
   async function loadGoals() {
     try {
-      goals = await getGoals(workspaceName);
+      goals = await getGoals(workspaceName, workspace?.ipAddress ?? undefined);
       // Clear deploy state when deploy goal completes
       if (deployGoalId) {
         const dg = goals.find(g => g.id === deployGoalId);
@@ -363,10 +387,12 @@
     workerWarmRetries = 0;
     clearInterval(goalRetryInterval);
     clearInterval(goalPollInterval);
+    // Capture IP at call time so the retry interval closure doesn't read a stale reactive var.
+    const capturedIp = workspace?.ipAddress ?? undefined;
 
     const tryPost = async () => {
       try {
-        const goal = await addGoal(workspaceName, prompt);
+        const goal = await addGoal(workspaceName, prompt, capturedIp);
         goals = [...goals, goal];
         pendingPrompt = null;
         clearInterval(goalRetryInterval);
@@ -411,10 +437,12 @@
     confirmationStartedAt = Date.now();
     confirmationWarning = false;
     clearInterval(confirmationInterval);
+    // Capture IP at call time so the confirmation interval closure doesn't read a stale reactive var.
+    const capturedIp = workspace?.ipAddress ?? undefined;
 
     confirmationInterval = setInterval(async () => {
       try {
-        const fetchedGoals = await getGoals(workspaceName);
+        const fetchedGoals = await getGoals(workspaceName, capturedIp);
         const goal = fetchedGoals.find(g => g.id === goalId);
         if (!goal) return; // not visible yet, keep waiting
 
@@ -448,7 +476,7 @@
     eventSource?.close();
     clearInterval(goalPollInterval);
     clearInterval(staleActivityInterval);
-    eventSource = createEventSource(workspaceName);
+    eventSource = createEventSource(workspaceName, workspace?.ipAddress ?? undefined);
 
     // Show an initial message immediately so the feed isn't blank while Claude starts
     if (activity.length === 0) {
@@ -558,7 +586,7 @@
     if (eventSource || historyEventSource) return; // already connected
     // Use a separate dedup map for history so it doesn't poison the live-stream dedup map.
     const historyDedup = new Map<string, number>();
-    const es = createEventSource(workspaceName);
+    const es = createEventSource(workspaceName, workspace?.ipAddress ?? undefined);
     historyEventSource = es;
     const timeout = setTimeout(() => { es.close(); historyEventSource = null; }, 6_000);
     function onEvent(e: MessageEvent) {
@@ -627,7 +655,7 @@
     isDeploying = true;
     deployGoalId = null;
     try {
-      const goal = await addGoal(workspaceName, 'Deploy the current app to production');
+      const goal = await addGoal(workspaceName, 'Deploy the current app to production', workspace?.ipAddress ?? undefined);
       goals = [...goals, goal];
       deployGoalId = goal.id;
       activity = [];
@@ -768,7 +796,7 @@
         {:else if schedulingFailed && !provisioningOverdue}
           <div class="text-center">
             <p style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; letter-spacing: -0.02em;">Our machines are a little busy right now</p>
-            <p style="font-size: 13px; color: var(--color-text-muted);">Finding one for you — your request is saved. This usually resolves in a minute or two.</p>
+            <p style="font-size: 13px; color: var(--color-text-muted);">Finding one for you — this usually resolves automatically in 1–2 minutes. If it takes much longer, cancel and try again.</p>
           </div>
         {:else if provisioningOverdue}
           <div class="text-center">
@@ -795,7 +823,15 @@
             <p style="font-size: 12px; color: var(--color-text-muted); opacity: 0.7; margin-bottom: 4px;">
               {PROVISIONING_TIPS[provisioningTipIndex]}
             </p>
-            <p style="font-size: 11px; color: var(--color-text-muted); opacity: 0.6; font-family: var(--font-mono);">Usually ready in 10–20 minutes</p>
+            <p style="font-size: 11px; color: var(--color-text-muted); opacity: 0.6; font-family: var(--font-mono);">{#if !workspace?.vmStatus || workspace.vmStatus === 'Scheduling'}
+                Usually takes 2–5 minutes to find a machine
+              {:else if workspace.vmStatus === 'Starting'}
+                Usually ready in 2–4 minutes
+              {:else if workspace.vmStatus === 'Booting'}
+                Almost there — usually under a minute
+              {:else}
+                Usually ready in 5–10 minutes
+              {/if}</p>
           </div>
         {/if}
         {#if pendingPrompt}
@@ -831,7 +867,25 @@
       </div>
 
       <!-- Right: Live preview (hidden on mobile when chat tab active) -->
-      <div class="{mobileTab === 'preview' ? 'flex w-full' : 'hidden'} md:flex flex-1 overflow-hidden">
+      <div class="{mobileTab === 'preview' ? 'flex w-full' : 'hidden'} md:flex flex-1 overflow-hidden flex-col">
+        {#if showCompletionToast}
+          <div
+            class="hidden md:flex items-center gap-2 px-4"
+            style="
+              flex-shrink: 0;
+              padding-top: 8px; padding-bottom: 8px;
+              background: rgba(34,197,94,0.10);
+              border-bottom: 1px solid rgba(34,197,94,0.25);
+              font-size: 13px; color: #4ade80; font-weight: 500;
+            "
+          >
+            <span>✓ Done — your app is ready!</span>
+            <button
+              on:click={() => showCompletionToast = false}
+              style="margin-left: auto; font-size: 11px; font-family: var(--font-mono); color: var(--color-text-muted); background: transparent; border: none; cursor: pointer; padding: 0 2px;"
+            >✕</button>
+          </div>
+        {/if}
         <LivePreview {workspace} {previewActive} {isWorking} {isReady} {isDeploying} on:deploy={handleDeploy} />
       </div>
     {/if}
@@ -896,7 +950,7 @@
       </div>
     {/if}
     <!-- Mobile activity bar on Preview tab — shows latest Claude status while building -->
-    {#if mobileTab === 'preview' && isWorking && !completionBanner && activity.length > 0}
+    {#if mobileTab === 'preview' && !completionBanner && (isWorking && activity.length > 0 || (!isProvisioning && pendingPrompt && !isWorking))}
       <div
         class="md:hidden fixed left-0 right-0 flex items-center gap-2 px-3"
         style="
@@ -909,13 +963,12 @@
       >
         <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); display: inline-block; flex-shrink: 0; animation: pulse 1.5s ease infinite;"></span>
         <span style="font-size: 11px; color: var(--color-text-muted); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
-          {activity[activity.length - 1].text}
+          {#if isWorking && activity.length > 0}
+            {activity[activity.length - 1].text}
+          {:else}
+            Your request was received — Claude is starting…
+          {/if}
         </span>
-        {#if staleActivityCount > 0 && staleActivityCount <= STALE_MESSAGES.length}
-          <span style="font-size: 10px; color: var(--color-text-muted); font-family: var(--font-mono); opacity: 0.5; flex-shrink: 0; padding-left: 6px;">
-            {staleActivityCount}/{STALE_MESSAGES.length}
-          </span>
-        {/if}
       </div>
     {/if}
     <div class="md:hidden fixed bottom-0 left-0 right-0 flex border-t" style="background: var(--color-surface); border-color: var(--color-border); z-index: 10;">

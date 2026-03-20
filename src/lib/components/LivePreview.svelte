@@ -49,18 +49,16 @@
       const title = iframeEl.contentDocument?.title ?? '';
       // Treat empty title (our baked template has no <title> tag) or known Vite defaults as template state
       const isTemplate = !title || title === 'Vite App' || title === 'Vite + TS' || title === 'Vite + SvelteKit';
-      if (isTemplate && isWorking) {
+      if (isTemplate && isWorking && hasSeenRealContent) {
+        // Regression: real content was shown, now back to template (HMR glitch) — brief shimmer
         clearShimmerTimeout();
         showShimmer = true;
-        if (hasSeenRealContent) {
-          // Regression: real content was shown, now back to template (HMR glitch)
-          shimmerTimeout = setTimeout(() => { showShimmer = false; }, 8_000);
-        } else {
-          // First load: template not yet modified by Claude — show overlay until real content arrives.
-          // Fallback timeout: Vite HMR delivers updates without triggering a full iframe reload,
-          // so onIframeLoad may never fire again. Clear after 90s as a safety valve.
-          shimmerTimeout = setTimeout(() => { showShimmer = false; }, 90_000);
-        }
+        shimmerTimeout = setTimeout(() => { showShimmer = false; }, 8_000);
+      } else if (isTemplate && isWorking && !hasSeenRealContent) {
+        // First load: template is the live dev server — show it immediately so the user sees
+        // their environment is ready. HMR will update the view when Claude modifies files.
+        clearShimmerTimeout();
+        showShimmer = false;
       } else if (!isTemplate) {
         // Real app content loaded
         clearShimmerTimeout();
@@ -72,15 +70,21 @@
     }
   }
 
-  // Proxy URL — always relative, same origin
-  $: proxyBase = workspace ? `/api/proxy/workspaces/${workspace.name}/preview/` : null;
+  // Proxy URL — always relative, same origin.
+  // Include ?ip= on the initial load so the server caches the IP immediately,
+  // eliminating resolveIP() calls for all subsequent asset requests.
+  $: proxyBase = workspace
+    ? `/api/proxy/workspaces/${workspace.name}/preview/${workspace.ipAddress ? `?ip=${encodeURIComponent(workspace.ipAddress)}` : ''}`
+    : null;
 
   // Address bar text
   $: addressText = deployedUrl
     ? deployedUrl.replace('https://', '')
     : previewActive
       ? 'Dev preview'
-      : 'No preview';
+      : isWorking
+        ? 'Building…'
+        : 'No preview';
 
   // Fetch deployed URL when workspace changes
   $: if (workspace?.name) {
@@ -146,7 +150,7 @@
       flex-shrink: 0;
     ">
       <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-accent, #6366f1); animation: buildingPulse 1.5s ease-in-out infinite;"></span>
-      Claude is building your preview…
+      Claude is writing your app — the preview updates live as files are saved
     </div>
   {/if}
   <!-- Browser chrome bar -->
@@ -251,7 +255,7 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if previewActive && iframeSrc}
+    {#if iframeSrc && (previewActive || (isReady && deployedUrl))}
       {#key key}
         <iframe
           src={iframeSrc}
@@ -278,7 +282,7 @@
           gap: 6px;
         ">
           <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-accent, #6366f1); animation: buildingPulse 1.5s ease-in-out infinite;"></span>
-          Claude is building your preview…
+          Claude is writing your app — the preview updates live as files are saved
         </div>
       {/if}
       {#if showShimmer}

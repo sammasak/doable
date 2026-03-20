@@ -41,7 +41,7 @@
 
 <div bind:this={container} class="flex-1 overflow-y-auto" style="padding: 8px 10px; max-height: 280px;">
   {#if items.length === 0}
-    <p style="color: var(--color-text-muted); font-size: 11px; font-style: italic; font-family: var(--font-mono); padding: 2px 0;">Waiting for activity…</p>
+    <p style="color: var(--color-text-muted); font-size: 11px; font-style: italic; font-family: var(--font-mono); padding: 2px 0;">Starting Claude…</p>
   {/if}
   {#each items as item (item.id)}
     {@const style = getStyle(item)}
