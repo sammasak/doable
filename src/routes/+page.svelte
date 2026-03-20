@@ -96,7 +96,7 @@
     creating = true;
     error = '';
     try {
-      await createWorkspace({
+      const workspace = await createWorkspace({
         name,
         containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
         bootstrapSecretName: 'claude-worker-bootstrap',
@@ -104,7 +104,7 @@
         idleHaltAfterMinutes: 30,
         goal: prompt.trim() || undefined,
       });
-      await goto(`/projects/${name}`);
+      await goto(`/projects/${workspace.name}`);
     } catch (e) {
       const msg = String(e);
       if (msg.includes('409')) {
