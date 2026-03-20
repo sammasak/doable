@@ -12,14 +12,16 @@ const requestDuration = meter.createHistogram('doable_http_server_duration_secon
 
 export const handle: Handle = async ({ event, resolve }) => {
   const start = performance.now();
-  const response = await resolve(event);
-  const duration = (performance.now() - start) / 1000;
-
-  requestDuration.record(duration, {
-    method: event.request.method,
-    route: event.route.id ?? 'unknown',
-    status: String(response.status),
-  });
-
-  return response;
+  let status = 'error';
+  try {
+    const response = await resolve(event);
+    status = String(response.status);
+    return response;
+  } finally {
+    requestDuration.record((performance.now() - start) / 1000, {
+      method: event.request.method,
+      route: event.route.id ?? 'unknown',
+      status,
+    });
+  }
 };

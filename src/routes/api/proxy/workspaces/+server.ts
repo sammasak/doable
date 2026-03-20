@@ -31,16 +31,17 @@ export const GET: RequestHandler = async () => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
+  const t0 = performance.now();
+  let result = 'error';
   try {
     const body = await request.json();
-    const t0 = performance.now();
     const res = await fetch(`${API}/api/v1/workspaces`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    wsCreateDuration.record((performance.now() - t0) / 1000);
-    wsCreateTotal.add(1, { result: res.ok ? 'success' : 'error' });
+    result = res.ok ? 'success' : 'error';
+    wsCreateTotal.add(1, { result });
     const data = await res.text();
     return new Response(data, {
       status: res.status,
@@ -53,5 +54,7 @@ export const POST: RequestHandler = async ({ request }) => {
       status: 502,
       headers: { 'Content-Type': 'application/json' }
     });
+  } finally {
+    wsCreateDuration.record((performance.now() - t0) / 1000);
   }
 };
