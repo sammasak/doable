@@ -50,7 +50,7 @@
   const STALE_ACTIVITY_MS = 15_000;  // inject a patience message after this much silence
   const STALE_SUBSEQUENT_MS = 25_000; // interval between subsequent stale messages
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
-  const SPEC_GOAL_TIMEOUT_MS = 120_000;   // 2 min: give up waiting for controller to post spec goal
+  const SPEC_GOAL_TIMEOUT_MS = 45_000;    // 45s: give up waiting for controller to post spec goal
 
   let goalRetries = 0;       // generic HTTP errors — fast cap (10 × 5s = 50s)
   const MAX_GOAL_RETRIES = 10;
@@ -306,16 +306,16 @@
           pendingPromptIsSpecGoal = false;
         } else if (workspace.goalPostingError && pendingPromptIsSpecGoal) {
           // Controller tried to post the spec goal but the worker rejected it.
-          error = `Something went wrong starting your project. Type your goal below to try again.`;
+          error = "We couldn't reach your build environment. Click below to retry with a fresh machine.";
           pendingPromptIsSpecGoal = false;
           pendingPrompt = null;
         } else if (specGoalWaitStartedAt > 0 && Date.now() - specGoalWaitStartedAt > SPEC_GOAL_TIMEOUT_MS) {
-          // Waited 2 minutes with no goals appearing — controller may have failed.
+          // Waited 45s with no goals appearing — controller may have failed.
           // Fall back to idle so the user can post the goal manually via the chat input.
           // Keep pendingPrompt so the goal text remains pre-filled in the textarea.
           pendingPromptIsSpecGoal = false;
           specGoalWaitStartedAt = 0;
-          error = 'Your project took too long to start. Type your goal below to try again, or refresh to check if it arrived.';
+          error = "We couldn't reach your build environment. Click below to retry with a fresh machine.";
         }
       } else if (!running) {
         clearInterval(previewPollInterval);
@@ -678,8 +678,8 @@
     }
   }
 
-  // Don't surface 'Error' badge on timeout alone — that's a transient delay, not a failure
-  $: vmStatus = workspace?.vmStatus ?? (isProvisioning ? 'Getting Ready' : 'Unknown');
+  // Show 'Error' badge when error is set (goal delivery failure, etc.)
+  $: vmStatus = error ? 'Error' : (workspace?.vmStatus ?? (isProvisioning ? 'Getting Ready' : 'Unknown'));
   $: isWorking = phase === 'posting_goal' || phase === 'confirming_goal' || phase === 'streaming';
   // Extract deployed URL from goal result for the persistent live URL bar
   $: liveUrl = (() => {
@@ -760,6 +760,29 @@
     {/if}
     {#if error}
       <span style="font-size: 13px; font-weight: 500; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
+      <button
+        on:click={async () => {
+          const goalText = pendingPrompt || workspace?.goal || '';
+          if (goalText) localStorage.setItem('doable:retryGoal', goalText);
+          // Fire-and-forget delete — don't block navigation on failure
+          if (workspace?.name) {
+            deleteWorkspace(workspace.name).catch(() => {});
+          }
+          goto('/');
+        }}
+        style="
+          margin-top: 8px;
+          padding: 6px 14px;
+          border-radius: 6px;
+          background: rgba(99, 102, 241, 0.12);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          color: var(--color-accent, #6366f1);
+          font-size: 12px;
+          font-family: var(--font-mono);
+          cursor: pointer;
+          transition: background 0.15s;
+        "
+      >↻ Try again with a fresh machine</button>
     {/if}
   </header>
 
