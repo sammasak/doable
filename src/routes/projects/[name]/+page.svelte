@@ -50,7 +50,7 @@
   const STALE_ACTIVITY_MS = 15_000;  // inject a patience message after this much silence
   const STALE_SUBSEQUENT_MS = 25_000; // interval between subsequent stale messages
   const CONFIRMATION_TIMEOUT_MS = 20_000; // warn if goal not picked up within this time
-  const SPEC_GOAL_TIMEOUT_MS = 45_000;    // 45s: give up waiting for controller to post spec goal
+  const SPEC_GOAL_TIMEOUT_MS = 60_000;    // 60s: give up waiting for controller to post spec goal
 
   let goalRetries = 0;       // generic HTTP errors — fast cap (10 × 5s = 50s)
   const MAX_GOAL_RETRIES = 10;
@@ -759,30 +759,31 @@
       >✕ Cancel</button>
     {/if}
     {#if error}
-      <span style="font-size: 13px; font-weight: 500; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
-      <button
-        on:click={async () => {
-          const goalText = pendingPrompt || workspace?.goal || '';
-          if (goalText) localStorage.setItem('doable:retryGoal', goalText);
-          // Fire-and-forget delete — don't block navigation on failure
-          if (workspace?.name) {
-            deleteWorkspace(workspace.name).catch(() => {});
-          }
-          goto('/');
-        }}
-        style="
-          margin-top: 8px;
-          padding: 6px 14px;
-          border-radius: 6px;
-          background: rgba(99, 102, 241, 0.12);
-          border: 1px solid rgba(99, 102, 241, 0.3);
-          color: var(--color-accent, #6366f1);
-          font-size: 12px;
-          font-family: var(--font-mono);
-          cursor: pointer;
-          transition: background 0.15s;
-        "
-      >↻ Try again with a fresh machine</button>
+      <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+        <span style="font-size: 13px; font-weight: 500; color: #F87171; margin-left: 4px; font-family: var(--font-mono);">{error}</span>
+        <button
+          on:click={async () => {
+            const goalText = pendingPrompt || workspace?.goal || '';
+            if (goalText) localStorage.setItem('doable:retryGoal', goalText);
+            // Fire-and-forget delete — don't block navigation on failure
+            if (workspace?.name) {
+              deleteWorkspace(workspace.name).catch((e: unknown) => { console.error('deleteWorkspace failed during retry:', e); });
+            }
+            goto('/');
+          }}
+          style="
+            padding: 6px 14px;
+            border-radius: 6px;
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: var(--color-accent, #6366f1);
+            font-size: 12px;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            transition: background 0.15s;
+          "
+        >↻ Try again with a fresh machine</button>
+      </div>
     {/if}
   </header>
 
