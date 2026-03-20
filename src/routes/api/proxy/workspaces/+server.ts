@@ -1,6 +1,16 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { getMeter } from '$lib/server/otel';
 
 const API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+
+const meter = getMeter();
+const wsCreateDuration = meter.createHistogram('doable_workspace_create_duration_seconds', {
+  description: 'Latency of workstation-api workspace creation calls from doable server',
+  unit: 's',
+});
+const wsCreateTotal = meter.createCounter('doable_workspace_create_total', {
+  description: 'Total workspace creation requests',
+});
 
 export const GET: RequestHandler = async () => {
   try {
@@ -23,11 +33,14 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
+    const t0 = performance.now();
     const res = await fetch(`${API}/api/v1/workspaces`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
+    wsCreateDuration.record((performance.now() - t0) / 1000);
+    wsCreateTotal.add(1, { result: res.ok ? 'success' : 'error' });
     const data = await res.text();
     return new Response(data, {
       status: res.status,
@@ -35,6 +48,7 @@ export const POST: RequestHandler = async ({ request }) => {
     });
   } catch (err) {
     console.error('[proxy] workspace create failed:', err);
+    wsCreateTotal.add(1, { result: 'error' });
     return new Response(JSON.stringify({ error: 'workspace API unreachable' }), {
       status: 502,
       headers: { 'Content-Type': 'application/json' }

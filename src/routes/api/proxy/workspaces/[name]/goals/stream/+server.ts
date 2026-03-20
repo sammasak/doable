@@ -1,6 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { getMeter } from '$lib/server/otel';
 
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+
+const meter = getMeter();
+const sseConnects = meter.createCounter('doable_sse_goal_stream_connects_total', {
+  description: 'Number of SSE goal-stream connections opened from the doable server',
+});
 
 async function resolveIP(name: string): Promise<string | null> {
   try {
@@ -13,9 +19,9 @@ async function resolveIP(name: string): Promise<string | null> {
   }
 }
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, url }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = await resolveIP(params.name);
+  const ip = url.searchParams.get('ip') || await resolveIP(params.name);
   if (!ip) {
     return new Response('Worker not ready', { status: 503 });
   }
@@ -39,6 +45,8 @@ export const GET: RequestHandler = async ({ params }) => {
     if (!upstream.ok || !upstream.body) {
       return new Response('Stream unavailable', { status: 502 });
     }
+
+    sseConnects.add(1);
 
     return new Response(upstream.body, {
       status: 200,
