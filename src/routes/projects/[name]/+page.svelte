@@ -85,10 +85,11 @@
   // Desktop completion toast — shown for 10s when isReady first becomes true
   let showCompletionToast = false;
   let prevIsReadyToast = false;
+  let completionToastTimer: ReturnType<typeof setTimeout> | null = null;
   $: {
     if (isReady && !prevIsReadyToast) {
       showCompletionToast = true;
-      setTimeout(() => { showCompletionToast = false; }, 10_000);
+      completionToastTimer = setTimeout(() => { showCompletionToast = false; }, 10_000);
     }
     prevIsReadyToast = isReady;
   }
@@ -183,6 +184,7 @@
     clearInterval(elapsedInterval);
     clearInterval(waitElapsedInterval);
     clearInterval(staleActivityInterval);
+    if (completionToastTimer !== null) clearTimeout(completionToastTimer);
     eventSource?.close();
     historyEventSource?.close();
   });
@@ -950,7 +952,7 @@
       </div>
     {/if}
     <!-- Mobile activity bar on Preview tab — shows latest Claude status while building -->
-    {#if mobileTab === 'preview' && !completionBanner && (isWorking && activity.length > 0 || (!isProvisioning && pendingPrompt && !isWorking))}
+    {#if mobileTab === 'preview' && !completionBanner && ((isWorking && activity.length > 0) || (pendingPrompt && !isWorking))}
       <div
         class="md:hidden fixed left-0 right-0 flex items-center gap-2 px-3"
         style="
