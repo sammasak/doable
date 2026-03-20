@@ -164,7 +164,7 @@
     // Heartbeat to prevent idle VM halt
     heartbeatInterval = setInterval(() => heartbeat(workspaceName), HEARTBEAT_MS);
 
-    // Rotate provisioning tips every 40s to break the silence during long VM boots
+    // Rotate provisioning tips every 20s to break the silence during long VM boots
     provisioningTipInterval = setInterval(() => {
       if (isProvisioning) {
         provisioningTipIndex = (provisioningTipIndex + 1) % PROVISIONING_TIPS.length;
