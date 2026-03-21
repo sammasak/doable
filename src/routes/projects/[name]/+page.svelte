@@ -338,6 +338,14 @@
           }
         } catch { /* ignore */ }
       }
+
+      // Belt-and-suspenders: check goalPostingError even when VM is not running
+      // (node failure kills VM before goal can be delivered)
+      if (pendingPromptIsSpecGoal && !error && workspace?.goalPostingError) {
+        error = "We couldn't reach your build environment. Click below to retry with a fresh machine.";
+        pendingPromptIsSpecGoal = false;
+        pendingPrompt = null;
+      }
     } catch (e) {
       // Suppress transient workspace fetch errors during provisioning and streaming —
       // brief 502s from the workspace API are normal during VM scheduling and don't
