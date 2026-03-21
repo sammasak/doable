@@ -109,6 +109,7 @@ export function parseEventToActivity(event: MessageEvent): ActivityItem | null {
   return null;
 }
 
-export function createEventSource(workspaceName: string): EventSource {
-  return new EventSource(`/api/proxy/workspaces/${workspaceName}/goals/stream`);
+export function createEventSource(workspaceName: string, ip?: string): EventSource {
+  const qs = ip ? `?ip=${encodeURIComponent(ip)}` : '';
+  return new EventSource(`/api/proxy/workspaces/${workspaceName}/goals/stream${qs}`);
 }

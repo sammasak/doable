@@ -136,8 +136,8 @@
 </script>
 
 <div class="flex flex-col h-full" style="background: var(--color-bg);">
-  <!-- Building banner — shown whenever Claude is working and no real app content has loaded yet (hidden when iframe is active to avoid duplicate banner) -->
-  {#if isWorking && !hasSeenRealContent && !previewActive}
+  <!-- Building banner — shown only when iframeSrc is absent (no VM IP yet) and Claude is working -->
+  {#if isWorking && !hasSeenRealContent && !previewActive && !iframeSrc}
     <div style="
       padding: 6px 12px;
       font-size: 12px;
@@ -255,7 +255,7 @@
 
   <!-- iframe or placeholder -->
   <div class="flex-1 relative" style="background: var(--color-bg);">
-    {#if iframeSrc && (previewActive || (isReady && deployedUrl))}
+    {#if iframeSrc}
       {#key key}
         <iframe
           src={iframeSrc}
@@ -266,23 +266,30 @@
           on:load={onIframeLoad}
         ></iframe>
       {/key}
+      <!-- Loading overlay: shown while Claude is building and real app content not yet detected -->
       {#if isWorking && !hasSeenRealContent}
-        <!-- Inline overlay for when iframe shows the raw Vite template (real content not yet detected) -->
-        <div style="
-          position: absolute;
-          top: 0; left: 0; right: 0;
-          padding: 6px 12px;
-          font-size: 12px;
-          background: rgba(99, 102, 241, 0.08);
-          border-bottom: 1px solid rgba(99, 102, 241, 0.15);
-          color: var(--color-text-muted);
-          z-index: 5;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        ">
-          <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--color-accent, #6366f1); animation: buildingPulse 1.5s ease-in-out infinite;"></span>
-          Claude is writing your app — the preview updates live as files are saved
+        <div class="preview-loading-overlay">
+          <div style="
+            width: 220px; border: 1px solid var(--color-border);
+            border-radius: 10px; overflow: hidden; opacity: 0.35;
+            margin-bottom: 20px;
+          ">
+            <div style="background: var(--color-surface-2); padding: 8px 10px; display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--color-border);">
+              <span style="width: 7px; height: 7px; border-radius: 50%; background: #4A5068; display: block;"></span>
+              <span style="width: 7px; height: 7px; border-radius: 50%; background: #4A5068; display: block;"></span>
+              <span style="width: 7px; height: 7px; border-radius: 50%; background: #4A5068; display: block;"></span>
+              <div style="flex: 1; background: var(--color-bg); border-radius: 4px; height: 12px; margin-left: 4px;"></div>
+            </div>
+            <div style="background: var(--color-bg); padding: 16px; height: 100px;">
+              <div style="height: 8px; background: var(--color-surface-2); border-radius: 4px; width: 70%; margin-bottom: 8px; animation: shimmerPulse 1.8s ease-in-out infinite;"></div>
+              <div style="height: 6px; background: var(--color-surface-2); border-radius: 4px; width: 90%; margin-bottom: 6px; animation: shimmerPulse 1.8s ease-in-out infinite 0.2s;"></div>
+              <div style="height: 6px; background: var(--color-surface-2); border-radius: 4px; width: 55%; animation: shimmerPulse 1.8s ease-in-out infinite 0.4s;"></div>
+            </div>
+          </div>
+          <div class="text-center">
+            <p style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 6px; font-weight: 500;">Building your app…</p>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Preview starts automatically when Vite is ready</p>
+          </div>
         </div>
       {/if}
       {#if showShimmer}
@@ -304,6 +311,7 @@
         </div>
       {/if}
     {:else}
+      <!-- No iframeSrc yet: VM IP not assigned, nothing to proxy to -->
       <div class="flex flex-col items-center justify-center h-full gap-5" style="padding: 32px;">
         <div style="
           width: 220px; border: 1px solid var(--color-border);
@@ -336,6 +344,21 @@
 </div>
 
 <style>
+  .preview-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--color-bg, rgba(0, 0, 0, 0.92));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    z-index: 15;
+    transition: opacity 0.4s ease;
+  }
   .deploy-spinner {
     width: 8px;
     height: 8px;

@@ -88,16 +88,35 @@
     }
   }
 
+  function autoGenerateName(fromPrompt: string): string {
+    return fromPrompt
+      .toLowerCase()
+      .replace(/^(build|create|make|add|set up)\s+(a|an)\s+/i, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 3)
+      .join('-')
+      .substring(0, 32) || 'my-project';
+  }
+
   async function handleCreate() {
+    if (!prompt.trim()) return;
+
+    // Auto-generate name from prompt if the user left it blank
+    if (!name.trim()) {
+      name = autoGenerateName(prompt.trim());
+    }
+
     nameError = validateName(name);
     if (nameError) { nameInput?.focus(); return; }
-    if (!prompt.trim()) return;
 
     creating = true;
     error = '';
     try {
       const workspace = await createWorkspace({
         name,
+        displayName: name,
         containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
         bootstrapSecretName: 'claude-worker-bootstrap',
         runStrategy: 'Always',
@@ -146,6 +165,7 @@
     try {
       const workspace = await createWorkspace({
         name: name.trim(),
+        displayName: name.trim(),
         containerDiskImage: 'registry.sammasak.dev/agents/claude-worker:latest',
         bootstrapSecretName: 'claude-worker-bootstrap',
         runStrategy: 'Always',
@@ -187,8 +207,8 @@
   }
 
   let canSubmit = $derived(
-    !validateName(name) && !!prompt.trim() && !creating &&
-    (activeTab === 'build' || REPO_PATH_RE.test(importRepoUrl.trim()))
+    !!prompt.trim() && !creating &&
+    (activeTab === 'build' || (!validateName(name) && REPO_PATH_RE.test(importRepoUrl.trim())))
   );
 </script>
 

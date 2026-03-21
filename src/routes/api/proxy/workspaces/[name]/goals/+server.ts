@@ -22,9 +22,9 @@ async function isWorkerReady(ip: string): Promise<boolean> {
   }
 }
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, url }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = await resolveIP(params.name);
+  const ip = url.searchParams.get('ip') || await resolveIP(params.name);
   if (!ip) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
 
   try {
@@ -36,9 +36,9 @@ export const GET: RequestHandler = async ({ params }) => {
   }
 };
 
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ params, request, url }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = await resolveIP(params.name);
+  const ip = url.searchParams.get('ip') || await resolveIP(params.name);
   if (!ip) return new Response(JSON.stringify({ reason: 'no_ip' }), {
     status: 503,
     headers: { 'Content-Type': 'application/json' }

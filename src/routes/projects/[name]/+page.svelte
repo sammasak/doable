@@ -118,7 +118,7 @@
   const POST_STALE_MESSAGES = [
     '⚙ Still building — you can close this tab and come back later…',
     '⚙ Still working — the URL will be ready when you return…',
-    '⚙ Taking longer than expected — we\'ll keep going in the background…',
+    '⚙ Complex apps take 10–20 minutes — we\'ll keep going in the background…',
   ];
 
   // State machine
@@ -716,7 +716,7 @@
 </script>
 
 <svelte:head>
-  <title>{workspaceName} — Doable</title>
+  <title>{workspace?.displayName || workspaceName} — Doable</title>
 </svelte:head>
 
 <div class="h-screen flex flex-col" style="background: var(--color-bg);">
@@ -728,8 +728,8 @@
     </button>
     <span style="color: var(--color-border); font-size: 16px; line-height: 1;">/</span>
     <span style="color: var(--color-accent); font-size: 14px;">◆</span>
-    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="max-w-[120px] md:max-w-xs">{workspaceName}</span>
-    <WorkspaceStatus status={isWorking ? 'Building' : vmStatus} />
+    <span style="font-weight: 600; color: var(--color-text-primary); font-size: 14px; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="max-w-[120px] md:max-w-xs">{workspace?.displayName || workspaceName}</span>
+    <WorkspaceStatus status={isReady ? 'Done' : isWorking ? 'Building' : vmStatus} />
     {#if isWorkerWarming}
       <span class="hidden md:flex" style="font-size: 11px; color: #60A5FA; font-family: var(--font-mono); align-items: center; gap: 4px;">
         <span style="width: 6px; height: 6px; border-radius: 50%; background: #60A5FA; animation: pulse 1.5s ease infinite; display: inline-block;"></span>

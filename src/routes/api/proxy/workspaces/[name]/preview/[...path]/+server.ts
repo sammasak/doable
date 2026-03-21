@@ -3,12 +3,28 @@ import type { RequestHandler } from '@sveltejs/kit';
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 const PREVIEW_PORT = 8080;
 
-async function resolveIP(name: string): Promise<string | null> {
+// Module-level TTL cache: workspace IP is stable for the lifetime of a VM session.
+// Eliminates resolveIP() on every proxied asset (HTML, JS, CSS, images) — previously
+// costing ~164ms × N resources per page load.
+const ipCache = new Map<string, { ip: string; expires: number }>();
+const IP_CACHE_TTL_MS = 60_000;
+
+async function resolveIPCached(name: string, ipHint?: string): Promise<string | null> {
+  // If caller passes the IP directly (from known workspace state), cache and return it.
+  if (ipHint) {
+    ipCache.set(name, { ip: ipHint, expires: Date.now() + IP_CACHE_TTL_MS });
+    return ipHint;
+  }
+  const now = Date.now();
+  const cached = ipCache.get(name);
+  if (cached && cached.expires > now) return cached.ip;
   try {
     const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`);
     if (!res.ok) return null;
     const ws = await res.json();
-    return ws.ipAddress ?? null;
+    const ip = ws.ipAddress ?? null;
+    if (ip) ipCache.set(name, { ip, expires: now + IP_CACHE_TTL_MS });
+    return ip;
   } catch {
     return null;
   }
@@ -16,7 +32,10 @@ async function resolveIP(name: string): Promise<string | null> {
 
 export const GET: RequestHandler = async ({ params, url }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = await resolveIP(params.name);
+  // Accept ?ip= from the initial iframe load (set by LivePreview when IP is known)
+  // to warm the cache — all subsequent asset requests then skip the resolveIP() call.
+  const ipHint = url.searchParams.get('ip') ?? undefined;
+  const ip = await resolveIPCached(params.name, ipHint);
   if (!ip) return new Response('VM not ready', { status: 503 });
 
   const path = params.path ? `/${params.path}` : '/';

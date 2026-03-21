@@ -10,6 +10,7 @@ export interface Workspace {
   repoUrl?: string;
   goalPosted?: boolean;
   goalPostingError?: string;
+  displayName?: string;
 }
 
 export interface Goal {
@@ -31,6 +32,7 @@ export interface CreateWorkspaceRequest {
   idleHaltAfterMinutes: number;
   goal?: string;
   repoUrl?: string;
+  displayName?: string;
 }
 
 // All calls go to /api/proxy/* which SvelteKit server routes forward to workstation-api
@@ -71,8 +73,9 @@ export async function heartbeat(name: string): Promise<void> {
   await fetch(`/api/proxy/workspaces/${name}/heartbeat`, { method: 'POST' });
 }
 
-export async function getGoals(name: string): Promise<Goal[]> {
-  const res = await fetch(`/api/proxy/workspaces/${name}/goals`);
+export async function getGoals(name: string, ip?: string): Promise<Goal[]> {
+  const qs = ip ? `?ip=${encodeURIComponent(ip)}` : '';
+  const res = await fetch(`/api/proxy/workspaces/${name}/goals${qs}`);
   if (res.status === 503) return [];
   if (!res.ok) throw new Error(`Failed to get goals: ${res.status}`);
   return res.json();
@@ -82,8 +85,9 @@ export class WorkerNotReadyError extends Error {
   constructor() { super('Worker warming up'); }
 }
 
-export async function addGoal(name: string, goal: string): Promise<Goal> {
-  const res = await fetch(`/api/proxy/workspaces/${name}/goals`, {
+export async function addGoal(name: string, goal: string, ip?: string): Promise<Goal> {
+  const qs = ip ? `?ip=${encodeURIComponent(ip)}` : '';
+  const res = await fetch(`/api/proxy/workspaces/${name}/goals${qs}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ goal })
@@ -104,9 +108,10 @@ export interface PreviewStatus {
   reason?: string;
 }
 
-export async function getPreviewStatus(name: string): Promise<PreviewStatus> {
+export async function getPreviewStatus(name: string, ip?: string): Promise<PreviewStatus> {
   try {
-    const res = await fetch(`/api/proxy/workspaces/${name}/preview-status`);
+    const qs = ip ? `?ip=${encodeURIComponent(ip)}` : '';
+    const res = await fetch(`/api/proxy/workspaces/${name}/preview-status${qs}`);
     if (!res.ok) return { active: false };
     return res.json();
   } catch {
