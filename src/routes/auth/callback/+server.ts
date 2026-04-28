@@ -5,11 +5,15 @@ import { encryptSession, decryptSession } from '$lib/auth/session';
 import { getOidcClient, getAuthorizationServer, getRedirectUri } from '$lib/auth/oidc';
 import { env } from '$env/dynamic/private';
 
+function redirect(location: string): Response {
+	return new Response(null, { status: 302, headers: { location } });
+}
+
 export const GET: RequestHandler = async ({ url, cookies }) => {
 	// Retrieve and validate PKCE cookie
 	const pkceToken = cookies.get('doable_pkce');
 	if (!pkceToken) {
-		return Response.redirect('/', 302);
+		return redirect('/');
 	}
 
 	let pkcePayload: { codeVerifier: string; state: string; next: string };
@@ -18,7 +22,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		pkcePayload = JSON.parse(pkceSession.userId);
 	} catch {
 		cookies.delete('doable_pkce', { path: '/auth/callback' });
-		return Response.redirect('/auth/login', 302);
+		return redirect('/auth/login');
 	}
 	cookies.delete('doable_pkce', { path: '/auth/callback' });
 
@@ -43,7 +47,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		result = await oauth.processAuthorizationCodeResponse(as, client, tokenResponse);
 	} catch (err) {
 		console.error('[auth] OAuth2 error:', err);
-		return Response.redirect('/auth/login', 302);
+		return redirect('/auth/login');
 	}
 
 	// Extract user identity from ID token claims
@@ -68,5 +72,5 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 
 	const next = pkcePayload.next ?? '/';
 	const safePath = next.startsWith('/') ? next : '/';
-	return Response.redirect(`${env.PUBLIC_BASE_URL}${safePath}`, 302);
+	return redirect(`${env.PUBLIC_BASE_URL}${safePath}`);
 };
