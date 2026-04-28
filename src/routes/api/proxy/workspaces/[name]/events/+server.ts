@@ -1,11 +1,22 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 
 const API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
-export const GET: RequestHandler = async ({ params }) => {
+function authHeaders(userId: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${env.WORKSTATION_API_KEY}`,
+  };
+  if (userId) headers['X-User-ID'] = userId;
+  return headers;
+}
+
+export const GET: RequestHandler = async ({ params, locals }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
   try {
-    const res = await fetch(`${API}/api/v1/workspaces/${params.name}/events`);
+    const res = await fetch(`${API}/api/v1/workspaces/${params.name}/events`, {
+      headers: authHeaders(locals.userId),
+    });
     if (!res.ok) return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
     const data = await res.text();
     return new Response(data, {

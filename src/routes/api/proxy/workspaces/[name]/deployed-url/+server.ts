@@ -1,10 +1,21 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
-async function resolveWorkspace(name: string): Promise<{ ipAddress: string | null; previewUrl: string | null }> {
+function authHeaders(userId: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${env.WORKSTATION_API_KEY}`,
+  };
+  if (userId) headers['X-User-ID'] = userId;
+  return headers;
+}
+
+async function resolveWorkspace(name: string, userId: string | null): Promise<{ ipAddress: string | null; previewUrl: string | null }> {
   try {
-    const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`);
+    const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`, {
+      headers: authHeaders(userId),
+    });
     if (!res.ok) return { ipAddress: null, previewUrl: null };
     const ws = await res.json();
     return { ipAddress: ws.ipAddress ?? null, previewUrl: ws.previewUrl ?? null };
@@ -13,10 +24,10 @@ async function resolveWorkspace(name: string): Promise<{ ipAddress: string | nul
   }
 }
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
 
-  const { ipAddress: ip, previewUrl } = await resolveWorkspace(params.name);
+  const { ipAddress: ip, previewUrl } = await resolveWorkspace(params.name, locals.userId);
 
   // Try VM endpoints first: port 4200 (claude-worker main), port 8080 (updated binary with /deployed-url)
   if (ip) {

@@ -1,5 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { getMeter } from '$lib/server/otel';
+import { env } from '$env/dynamic/private';
 
 const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
@@ -8,9 +9,19 @@ const sseConnects = meter.createCounter('doable_sse_goal_stream_connects_total',
   description: 'Number of SSE goal-stream connections opened from the doable server',
 });
 
-async function resolveIP(name: string): Promise<string | null> {
+function authHeaders(userId: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${env.WORKSTATION_API_KEY}`,
+  };
+  if (userId) headers['X-User-ID'] = userId;
+  return headers;
+}
+
+async function resolveIP(name: string, userId: string | null): Promise<string | null> {
   try {
-    const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`);
+    const res = await fetch(`${WORKSTATION_API}/api/v1/workspaces/${name}`, {
+      headers: authHeaders(userId),
+    });
     if (!res.ok) return null;
     const ws = await res.json();
     return ws.ipAddress ?? null;
@@ -19,9 +30,9 @@ async function resolveIP(name: string): Promise<string | null> {
   }
 }
 
-export const GET: RequestHandler = async ({ params, url }) => {
+export const GET: RequestHandler = async ({ params, url, locals }) => {
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = url.searchParams.get('ip') || await resolveIP(params.name);
+  const ip = url.searchParams.get('ip') || await resolveIP(params.name, locals.userId);
   if (!ip) {
     return new Response('Worker not ready', { status: 503 });
   }
