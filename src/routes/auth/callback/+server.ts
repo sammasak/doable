@@ -72,5 +72,5 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 
 	const next = pkcePayload.next ?? '/';
 	const safePath = next.startsWith('/') ? next : '/';
-	return redirect(`${env.PUBLIC_BASE_URL}${safePath}`);
+	return redirect(`${env.APP_BASE_URL}${safePath}`);
 };

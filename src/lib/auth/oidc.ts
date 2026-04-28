@@ -13,5 +13,5 @@ export async function getAuthorizationServer(): Promise<oauth.AuthorizationServe
 }
 
 export function getRedirectUri(): string {
-	return `${env.PUBLIC_BASE_URL}/auth/callback`;
+	return `${env.APP_BASE_URL}/auth/callback`;
 }
