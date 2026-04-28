@@ -28,6 +28,8 @@
     "@opentelemetry/resources": "^2.6.0",
     "@opentelemetry/sdk-metrics": "^2.6.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
-    "marked": "^17.0.4"
+    "jose": "^6.2.3",
+    "marked": "^17.0.4",
+    "oauth4webapi": "^3.8.6"
   }
 }
