@@ -1,7 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+const WORKSTATION_API = env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
 function authHeaders(userId: string | null): Record<string, string> {
   const headers: Record<string, string> = {
@@ -25,6 +25,9 @@ async function resolveWorkspace(name: string, userId: string | null): Promise<{ 
 }
 
 export const GET: RequestHandler = async ({ params, locals }) => {
+  if (!locals.userId) {
+    return new Response('Unauthorized', { status: 401 });
+  }
   if (!params.name) return new Response('Bad request', { status: 400 });
 
   const { ipAddress: ip, previewUrl } = await resolveWorkspace(params.name, locals.userId);

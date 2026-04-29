@@ -24,7 +24,18 @@ export async function encryptSession(session: Session): Promise<string> {
 		.encrypt(getKey());
 }
 
-export async function decryptSession(token: string): Promise<Session> {
-	const { payload } = await jwtDecrypt(token, getKey());
-	return payload as unknown as Session;
+export async function decryptSession(token: string): Promise<Session | null> {
+	try {
+		const { payload } = await jwtDecrypt(token, getKey());
+		if (
+			!payload ||
+			typeof payload.userId !== 'string' ||
+			typeof payload.email !== 'string'
+		) {
+			return null;
+		}
+		return payload as unknown as Session;
+	} catch {
+		return null;
+	}
 }

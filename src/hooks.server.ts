@@ -24,14 +24,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   const sessionCookie = event.cookies.get('doable_session');
   if (sessionCookie) {
-    try {
-      const session = await decryptSession(sessionCookie);
-      if (session.expiresAt > Date.now()) {
-        event.locals.userId = session.userId;
-        event.locals.email = session.email;
-      }
-    } catch {
-      // Invalid/expired — clear it
+    const session = await decryptSession(sessionCookie);
+    if (session && session.expiresAt > Date.now()) {
+      event.locals.userId = session.userId;
+      event.locals.email = session.email;
+    } else {
+      // Invalid, tampered, or expired — clear it
       event.cookies.delete('doable_session', { path: '/' });
     }
   }

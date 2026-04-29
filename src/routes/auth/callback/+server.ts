@@ -17,8 +17,12 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	}
 
 	let pkcePayload: { codeVerifier: string; state: string; next: string };
+	const pkceSession = await decryptSession(pkceToken);
+	if (!pkceSession) {
+		cookies.delete('doable_pkce', { path: '/auth/callback' });
+		return redirect('/auth/login');
+	}
 	try {
-		const pkceSession = await decryptSession(pkceToken);
 		pkcePayload = JSON.parse(pkceSession.userId);
 	} catch {
 		cookies.delete('doable_pkce', { path: '/auth/callback' });
@@ -71,6 +75,6 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	});
 
 	const next = pkcePayload.next ?? '/';
-	const safePath = next.startsWith('/') ? next : '/';
+	const safePath = next.startsWith('/') && !next.startsWith('//') ? next : '/';
 	return redirect(`${env.APP_BASE_URL}${safePath}`);
 };

@@ -2,7 +2,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { getMeter } from '$lib/server/otel';
 import { env } from '$env/dynamic/private';
 
-const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+const WORKSTATION_API = env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
 const meter = getMeter();
 const sseConnects = meter.createCounter('doable_sse_goal_stream_connects_total', {
@@ -30,9 +30,12 @@ async function resolveIP(name: string, userId: string | null): Promise<string | 
   }
 }
 
-export const GET: RequestHandler = async ({ params, url, locals }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
+  if (!locals.userId) {
+    return new Response('Unauthorized', { status: 401 });
+  }
   if (!params.name) return new Response('Bad request', { status: 400 });
-  const ip = url.searchParams.get('ip') || await resolveIP(params.name, locals.userId);
+  const ip = await resolveIP(params.name, locals.userId);
   if (!ip) {
     return new Response('Worker not ready', { status: 503 });
   }

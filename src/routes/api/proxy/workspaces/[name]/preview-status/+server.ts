@@ -1,7 +1,7 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 
-const WORKSTATION_API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+const WORKSTATION_API = env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 const PREVIEW_PORT = 8080;
 
 function authHeaders(userId: string | null): Record<string, string> {
@@ -25,10 +25,12 @@ async function resolveIP(name: string, userId: string | null): Promise<string | 
   }
 }
 
-export const GET: RequestHandler = async ({ params, url, locals }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
+  if (!locals.userId) {
+    return new Response('Unauthorized', { status: 401 });
+  }
   if (!params.name) return new Response('Bad request', { status: 400 });
-  // Accept ?ip= to skip the resolveIP() round-trip when caller already knows the IP.
-  const ip = url.searchParams.get('ip') || await resolveIP(params.name, locals.userId);
+  const ip = await resolveIP(params.name, locals.userId);
   if (!ip) return new Response(JSON.stringify({ active: false, reason: 'no_ip' }), {
     headers: { 'Content-Type': 'application/json' }
   });

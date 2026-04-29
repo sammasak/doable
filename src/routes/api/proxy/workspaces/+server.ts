@@ -2,7 +2,7 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { getMeter } from '$lib/server/otel';
 import { env } from '$env/dynamic/private';
 
-const API = process.env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
+const API = env.WORKSTATION_API_URL || 'https://workstations-api.sammasak.dev';
 
 function authHeaders(userId: string | null): Record<string, string> {
   const headers: Record<string, string> = {
