@@ -1,5 +1,5 @@
 // src/routes/auth/login/+server.ts
-import type { RequestHandler } from '@sveltejs/kit';
+import { redirect, type RequestHandler } from '@sveltejs/kit';
 import * as oauth from 'oauth4webapi';
 import { encryptSession } from '$lib/auth/session';
 import { getOidcClient, getAuthorizationServer, getRedirectUri } from '$lib/auth/oidc';
@@ -40,5 +40,5 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	authUrl.searchParams.set('code_challenge', codeChallenge);
 	authUrl.searchParams.set('code_challenge_method', 'S256');
 
-	return Response.redirect(authUrl.toString(), 302);
+	throw redirect(302, authUrl.toString());
 };
