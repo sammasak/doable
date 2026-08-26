@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'ui-monospace', monospace;
+
+  --color-bg:            #080B14;
+  --color-surface:       #0E1422;
+  --color-surface-2:     #141927;
+  --color-border:        rgba(255,255,255,0.07);
+  --color-border-accent: rgba(99,102,241,0.3);
+  --color-text-primary:  #F0F2FF;
+  --color-text-secondary:#8B91A8;
+  --color-text-muted:    #4A5068;
+  --color-accent:        #6366F1;
+  --color-accent-glow:   rgba(99,102,241,0.15);
+  --color-success:       #10B981;
+  --color-success-dim:   rgba(16,185,129,0.12);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+code, pre, .badge, input, textarea, select {
+  font-family: var(--font-mono);
+}
+
+/* Animations */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.8); }
+}
+
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes spin {
+  to { --angle: 360deg; }
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
+}
+
+/* Project cards */
+.project-card {
+  position: relative;
+  isolation: isolate;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  animation: fadeSlideUp 0.4s ease both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+.project-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  background: conic-gradient(from var(--angle, 0deg), transparent 0%, #6366F1 30%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  animation: spin 4s linear infinite;
+  z-index: -1;
+}
+
+.project-card:hover {
+  background: var(--color-surface-2);
+  border-color: rgba(99,102,241,0.25);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.15);
+}
+
+.project-card:hover::before {
+  opacity: 1;
+}
+
+/* Status badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.status-badge .dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.status-badge .dot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: inherit;
+  animation: pulse 2s ease infinite;
+}
+
+/* Modal */
+.modal-backdrop {
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+}
+
+.modal-surface {
+  background: var(--color-surface-2);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  animation: modalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.modal-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: rgba(99,102,241,0.5);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+}
+
+.modal-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Header */
+.header-bar {
+  background: rgba(8,11,20,0.7);
+  backdrop-filter: blur(12px) saturate(180%);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Hover utilities */
+.hover-text:hover { color: var(--color-text-primary) !important; }
+.hover-delete:hover { color: #F87171 !important; background: rgba(239,68,68,0.1) !important; }
+.hover-border-accent:hover { border-color: rgba(99,102,241,0.4) !important; color: var(--color-text-primary) !important; }
+
+/* Back button hover */
+.btn-back { color: var(--color-text-muted); font-size: 13px; padding: 4px 8px; border-radius: 6px; transition: color 0.15s; }
+.btn-back:hover { color: var(--color-text-primary); }
+
+/* Close button hover */
+.btn-close { position: absolute; top: 16px; right: 16px; color: var(--color-text-muted); font-size: 18px; line-height: 1; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; transition: color 0.15s, background 0.15s; }
+.btn-close:hover { color: var(--color-text-primary); background: rgba(255,255,255,0.06); }
+
+/* Cancel button hover */
+.btn-cancel { padding: 8px 16px; color: var(--color-text-secondary); font-size: 14px; border-radius: 8px; transition: color 0.15s; }
+.btn-cancel:hover { color: var(--color-text-primary); }
+
+/* Delete button hover */
+.btn-delete { color: var(--color-text-muted); font-size: 12px; padding: 4px 6px; border-radius: 4px; transition: color 0.15s, background 0.15s; }
+.btn-delete:hover { color: #F87171; background: rgba(239,68,68,0.1); }
+
+/* Send button */
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+/* Chat textarea */
+.chat-textarea {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  resize: none;
+  font-family: var(--font-sans);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.chat-textarea:focus {
+  outline: none;
+  border-color: rgba(99,102,241,0.5);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+}
+.chat-textarea::placeholder { color: var(--color-text-muted); }
+.chat-textarea:disabled { opacity: 0.5; }
+
+/* Reload button hover */
+.btn-reload { font-size: 12px; color: var(--color-text-secondary); padding: 4px 10px; border: 1px solid var(--color-border); border-radius: 6px; font-family: var(--font-mono); transition: border-color 0.15s, color 0.15s; }
+.btn-reload:hover { color: var(--color-text-primary); border-color: rgba(99,102,241,0.4); }
+
+/* Accent button */
+.btn-accent {
+  background: var(--color-accent);
+  color: white;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.5), 0 4px 16px rgba(99,102,241,0.2);
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+
+.btn-accent:hover {
+  opacity: 0.9;
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.7), 0 4px 24px rgba(99,102,241,0.3);
+}
+
+/* Chat sidebar activity entries */
+.activity-bash { border-left: 2px solid #6B7280; color: var(--color-text-secondary); }
+.activity-write { border-left: 2px solid #10B981; color: #34D399; }
+.activity-edit { border-left: 2px solid #6366F1; color: #818CF8; }
+.activity-other { border-left: 2px solid #4A5068; color: var(--color-text-muted); }
